@@ -212,8 +212,50 @@ async function ensureOffscreen() {
   await offscreenPending;
 }
 
-function askOffscreen(msg) {
-  return ensureOffscreen().then(() => chrome.runtime.sendMessage({ target: 'offscreen', ...msg }));
+/** Chrome needs a document to build Blobs in. Firefox's background page is one. */
+const HAS_OFFSCREEN = typeof chrome.offscreen !== 'undefined';
+
+let streamsModule = null;
+async function localStreams() {
+  streamsModule ??= await import('./lib/streams.js');
+  return streamsModule;
+}
+
+/**
+ * Runs a stream job wherever this browser can run it: Chrome hands it to the
+ * offscreen document, Firefox does it here, since its background page already
+ * has DOMParser and createObjectURL and has no offscreen API at all.
+ */
+async function askOffscreen(msg) {
+  if (HAS_OFFSCREEN) {
+    await ensureOffscreen();
+    return chrome.runtime.sendMessage({ target: 'offscreen', ...msg });
+  }
+
+  const streams = await localStreams();
+  if (msg.type === 'variants') return streams.variants(msg);
+  if (msg.type === 'cancel') {
+    streams.cancel(msg.jobId);
+    return {};
+  }
+  if (msg.type === 'assemble') {
+    streams
+      .assemble(msg, {
+        onProgress: (jobId, phase, extra) => emit({ type: 'progress', jobId, phase, ...extra }),
+        onAssembled: (m) => handlers.assembled(m),
+      })
+      .catch((e) => {
+        const err = String(e?.message || e);
+        emit({
+          type: 'progress',
+          jobId: msg.jobId,
+          phase: err === 'cancelled' ? 'cancelled' : 'error',
+          error: err,
+        });
+      });
+    return { started: true };
+  }
+  return {};
 }
 
 /* --------------------------------------------------------------- qualities */
@@ -813,7 +855,7 @@ const handlers = {
       jobs.delete(msg.jobId);
       emit({ type: 'progress', jobId: msg.jobId, phase: 'cancelled' });
     }
-    chrome.runtime.sendMessage({ target: 'offscreen', type: 'cancel', jobId: msg.jobId }).catch(() => {});
+    askOffscreen({ type: 'cancel', jobId: msg.jobId }).catch(() => {});
     return {};
   },
 

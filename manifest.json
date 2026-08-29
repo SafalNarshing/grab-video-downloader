@@ -22,6 +22,9 @@
   },
   "background": {
     "service_worker": "src/background.js",
+    "scripts": [
+      "src/background.js"
+    ],
     "type": "module"
   },
   "content_scripts": [
@@ -53,5 +56,11 @@
   "options_ui": {
     "page": "src/options/options.html",
     "open_in_tab": true
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "grab@safalnarshing.github.io",
+      "strict_min_version": "128.0"
+    }
   }
 }

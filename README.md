@@ -19,8 +19,7 @@
   <a href="#quick-start">Quick start</a> ·
   <a href="#screenshots">Screenshots</a> ·
   <a href="#using-it">Using it</a> ·
-  <a href="#server-api">API</a> ·
-  <a href="#notes-worth-reading">Notes</a>
+  <a href="#server-api">API</a>
 </p>
 
 ---
@@ -127,11 +126,35 @@ change constantly: `pip install -U yt-dlp`.
 
 ## 3. Load the extension
 
-1. Open `chrome://extensions` and turn on **Developer mode**.
+One package works in all three browsers. The manifest carries both background
+forms, and each browser ignores the one it does not understand.
+
+**Chrome or Edge** (116+)
+
+1. Open `chrome://extensions`, turn on **Developer mode**.
 2. **Load unpacked** → select this folder.
 3. Pin it, so the badge stays visible.
 
-Chrome or Edge **116+** (offscreen documents and `chrome.runtime.getContexts`).
+**Firefox** (128+)
+
+1. Open `about:debugging#/runtime/this-firefox`.
+2. **Load Temporary Add-on** → pick `manifest.json` in this folder.
+3. Open **Extensions → Grab → Permissions** and allow access to all sites.
+
+That third step is not optional. Firefox treats MV3 host permissions as opt-in,
+so until you grant it, page detection finds nothing and the panel stays empty.
+Chrome grants them at install time, which is why it needs no equivalent step.
+
+A temporary add-on disappears when Firefox restarts. To keep it, build a package
+and sign it — unlisted signing is free and skips review:
+
+```bash
+python tools/package.py                    # -> dist/grab-<version>.zip
+npx web-ext sign --source-dir . --channel=unlisted   --api-key=<jwt issuer> --api-secret=<jwt secret>
+```
+
+Credentials come from [addons.mozilla.org](https://addons.mozilla.org/developers/addon/api/key/).
+Signing returns an `.xpi` you can install permanently.
 
 ## 4. Point it at your server
 
@@ -167,41 +190,6 @@ Pick a quality and press **Download**.
 - **Right-click** any page, video, or link → **Download with Grab…**. That fills
   the link in and opens the panel as a **separate window**, which stays open
   until you close it.
-
-### Why the right-click opens a window
-
-Chrome closes a toolbar popup the instant it loses focus, and no extension can
-stop it — there is no API for it. So the context menu opens a real window
-instead. It stays put, survives clicking elsewhere, and is resizable. The
-pop-out button in the toolbar popup (next to the theme toggle) detaches it the
-same way.
-
-Your download was never actually pausing when the popup vanished: the server
-keeps working regardless, and the file still lands. Only the progress display
-was disappearing. The panel now reads progress straight from the server rather
-than waiting to be told, so it reports the truth even if the extension's
-background worker has been suspended in the meantime.
-
-### Which link the right-click uses
-
-Never the media source. On Instagram, Facebook, and anything else built on
-MediaSource, the video element's `src` is a `blob:` handle or a signed CDN
-chunk, and the server can do nothing with either. What it wants is the page the
-video lives on. So, in order:
-
-1. The link you right-clicked, if you right-clicked one.
-2. A selected URL, if you right-clicked a selection.
-3. **The post's own permalink** — on a feed the address bar points at the feed,
-   not the video, so the page is asked for the nearest post link around the
-   element you clicked. On a page that is already a post or a watch page, its
-   canonical URL is used directly; hunting the DOM there would find a
-   recommendation instead of what you are watching.
-4. The frame URL, then the page URL. An embedded player reports its own URL,
-   which yt-dlp handles even when the surrounding article is not recognised.
-
-Tracking parameters are stripped, so what lands in the link field is the clean
-permalink: `utm_*`, `fbclid`, `igshid`, `si`, `t`, and the rest. Meaningful ones
-survive — YouTube's `v`, Vimeo's privacy `h`.
 
 ### If the server is not running
 
@@ -254,63 +242,3 @@ table, so the extension never reasons about codecs — it just echoes one option
 back to `/download`.
 
 ---
-
-## Notes worth reading
-
-**CORS is the access control.** The server only accepts browser-extension
-origins. A normal web page cannot reach it: every endpoint requires
-`application/json`, which forces a preflight that this policy rejects for
-`http(s)` origins. Keep `--host` on loopback — this process downloads any URL it
-is handed, and binding it to `0.0.0.0` hands that to your whole network.
-
-**`<all_urls>` is in the permissions.** It is needed for the media sniffing that
-powers detection and the offline fallback, and the API address is
-user-configurable so it cannot be narrowed to localhost. The rest is minimal:
-`downloads`, `storage`, `tabs`, `webRequest`, `offscreen`, `scripting`,
-`contextMenus`.
-
-**Live streams** download only the window the playlist currently advertises.
-
-**DRM is out of scope.** Netflix, Disney+, and anything else using Widevine or
-FairPlay will not work, and no part of this attempts to decrypt them.
-
-Downloading is subject to the terms of the site you are on and to copyright. Use
-it on material you have the right to keep.
-
----
-
-## Working on the UI
-
-`src/popup/preview.html` renders the panel with stub data and a stubbed server,
-so you can iterate on CSS without reloading the extension. It is not referenced
-by the manifest.
-
-It has to be served over HTTP — the popup uses ES modules, which browsers refuse
-to load from `file://`:
-
-```bash
-python -m http.server 8899
-# http://127.0.0.1:8899/src/popup/preview.html?theme=dark&state=playing
-#   theme = dark | light
-#   state   = playing | empty | busy | offline | apibar
-#   surface = window   (renders the detached-window layout)
-#   measure = 1        (stamps layout widths onto <html> for --dump-dom)
-#
-# Headless screenshots below ~500px wide get cropped rather than reflowed,
-# so check narrow layouts at 520px or wider.
-```
-
-`tools/context-url-test.html` checks the right-click URL resolution against
-feed, watch-page, and permalink markup. Open it over the same HTTP server; the
-tab title reads `ALL PASS` or `FAILURES`, and `<html data-results>` carries the
-detail.
-
-Icons are generated from `logo.jpg`, the single source of truth for artwork:
-
-```bash
-python tools/make-icons.py
-```
-
-It crops to the mark and emits both families — toolbar tiles that keep the
-logo's light background so they read on any toolbar, and background-removed
-header marks tinted per theme.
