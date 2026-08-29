@@ -1,11 +1,38 @@
-# Grab — Video Downloader
+<p align="center">
+  <img src="docs/banner.jpg" alt="Grab — Video Downloader" width="100%">
+</p>
 
-A personal video downloader in two parts:
+<p align="center">
+  <b>Detects the video a page is playing, and saves it properly.</b><br>
+  A Manifest&nbsp;V3 browser extension backed by a local yt-dlp&nbsp;+&nbsp;ffmpeg server.
+</p>
 
-- **A local server** (`server/`) — FastAPI wrapping yt-dlp and ffmpeg. It knows
-  the sites, picks real formats, and muxes properly.
-- **A browser extension** (`src/`) — Manifest V3, unpacked. It detects what the
-  current tab is playing, shows it, and asks the server to fetch it.
+<p align="center">
+  <img src="https://img.shields.io/badge/Manifest-V3-3d6dff?style=flat-square&labelColor=17171c" alt="Manifest V3">
+  <img src="https://img.shields.io/badge/Chrome%20%7C%20Edge-116%2B-6d90ff?style=flat-square&labelColor=17171c" alt="Chrome or Edge 116+">
+  <img src="https://img.shields.io/badge/Python-3.10%2B-4a6bff?style=flat-square&labelColor=17171c" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/powered%20by-yt--dlp-9b3cff?style=flat-square&labelColor=17171c" alt="Powered by yt-dlp">
+  <img src="https://img.shields.io/badge/requires-ffmpeg-16b39a?style=flat-square&labelColor=17171c" alt="Requires ffmpeg">
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#screenshots">Screenshots</a> ·
+  <a href="#using-it">Using it</a> ·
+  <a href="#server-api">API</a> ·
+  <a href="#notes-worth-reading">Notes</a>
+</p>
+
+---
+
+## What it is
+
+Two parts that work together:
+
+| | |
+| --- | --- |
+| **`server/`** | FastAPI wrapping yt-dlp and ffmpeg. It knows the sites, picks real formats, and muxes properly. |
+| **`src/`** | Manifest V3 extension, loaded unpacked. It detects what the current tab is playing, shows it, and asks the server to fetch it. |
 
 Start the server once and leave it running; after that the extension is the
 whole interface. Everything stays on your machine — the extension talks only to
@@ -13,6 +40,16 @@ the address you configure, which defaults to `http://127.0.0.1:8787`.
 
 The panel is deliberately square — no rounded corners anywhere — with a near
 black dark theme, a grey-white light theme, and a liquid-glass download button.
+
+### Quick start
+
+```bash
+pip install -r server/requirements.txt   # once, plus ffmpeg on your PATH
+python server/server.py                  # leave this running
+```
+
+Then `chrome://extensions` → **Developer mode** → **Load unpacked** → this
+folder. Full detail below.
 
 ## Screenshots
 
