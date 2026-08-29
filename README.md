@@ -135,7 +135,7 @@ forms, and each browser ignores the one it does not understand.
 2. **Load unpacked** → select this folder.
 3. Pin it, so the badge stays visible.
 
-**Firefox** (128+)
+**Firefox** (142+)
 
 1. Open `about:debugging#/runtime/this-firefox`.
 2. **Load Temporary Add-on** → pick `manifest.json` in this folder.
