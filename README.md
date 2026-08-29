@@ -52,14 +52,18 @@ folder. Full detail below.
 
 ## Screenshots
 
+<p align="center">
+  <img src="docs/screenshots/02-quality-and-download.png" alt="Grab open beside a YouTube video with the quality list expanded" width="100%">
+</p>
+
+<p align="center">
+  <sub><b>The quality list</b> — every resolution yt-dlp found for the video, with sizes, plus MP3. The dot on the server button is green, so this came from the local server rather than in-browser detection.</sub>
+</p>
+
 | | |
 | --- | --- |
-| <img src="docs/screenshots/01-panel.png" alt="The Grab panel, empty state, local server not running" width="300"> | **The panel** — square, near-black, with the link field and the glass button. Shown before anything is playing and with the server not yet started, hence the red dot. |
-| <img src="docs/screenshots/02-quality-and-download.png" alt="Quality list and the download button mid-progress" width="420"> | **Quality and download** — the yt-dlp quality ladder, and the glass button filling with progress. |
-| <img src="docs/screenshots/03-right-click-window.png" alt="The detached download window opened from the context menu" width="420"> | **Right-click to a window** — *Download with Grab…* opens a window that stays put. |
-
-<sub>The lower two are still placeholders. Drop replacements into
-`docs/screenshots/` under the same names and the README picks them up.</sub>
+| <img src="docs/screenshots/01-panel.png" alt="The Grab panel, empty state, local server not running" width="320"> | **The panel** — square, near-black, with the link field and the glass button. Shown before anything is playing and with the server not yet started, hence the red dot. |
+| <img src="docs/screenshots/03-right-click-menu.png" alt="Firefox context menu showing the Download with Grab entry" width="320"> | **Right-click anywhere** — *Download with Grab…* sits at the bottom of the context menu. It resolves the page or post URL, not the media source, and opens the panel as a window with that link already filled in. |
 
 ---
 
