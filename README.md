@@ -60,10 +60,9 @@ folder. Full detail below.
   <sub><b>The quality list</b> — every resolution yt-dlp found for the video, with sizes, plus MP3. The dot on the server button is green, so this came from the local server rather than in-browser detection.</sub>
 </p>
 
-| | |
-| --- | --- |
-| <img src="docs/screenshots/01-panel.png" alt="The Grab panel, empty state, local server not running" width="320"> | **The panel** — square, near-black, with the link field and the glass button. Shown before anything is playing and with the server not yet started, hence the red dot. |
-| <img src="docs/screenshots/03-right-click-menu.png" alt="Firefox context menu showing the Download with Grab entry" width="320"> | **Right-click anywhere** — *Download with Grab…* sits at the bottom of the context menu. It resolves the page or post URL, not the media source, and opens the panel as a window with that link already filled in. |
+| <img src="docs/screenshots/01-panel.png" alt="The Grab panel in its empty state with the local server not running" width="100%"> | <img src="docs/screenshots/03-right-click-menu.png" alt="Firefox context menu showing the Download with Grab entry" width="100%"> |
+| :--: | :--: |
+| <sub><b>The panel</b> — square, near-black, link field and glass button. Nothing playing yet and the server not started, hence the red dot.</sub> | <sub><b>Right-click anywhere</b> — <i>Download with Grab…</i> resolves the page or post URL, never the media source, and opens the panel with it filled in.</sub> |
 
 ---
 
