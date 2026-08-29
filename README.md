@@ -55,12 +55,12 @@ folder. Full detail below.
 
 | | |
 | --- | --- |
-| <img src="docs/screenshots/01-now-playing.png" alt="The panel showing the video a page is playing" width="420"> | **Now playing** — thumbnail, title, site and length for the one video the page is playing. |
+| <img src="docs/screenshots/01-panel.png" alt="The Grab panel, empty state, local server not running" width="300"> | **The panel** — square, near-black, with the link field and the glass button. Shown before anything is playing and with the server not yet started, hence the red dot. |
 | <img src="docs/screenshots/02-quality-and-download.png" alt="Quality list and the download button mid-progress" width="420"> | **Quality and download** — the yt-dlp quality ladder, and the glass button filling with progress. |
 | <img src="docs/screenshots/03-right-click-window.png" alt="The detached download window opened from the context menu" width="420"> | **Right-click to a window** — *Download with Grab…* opens a window that stays put. |
 
-<sub>Those three files are placeholders. Replace them in `docs/screenshots/`
-keeping the same names and the README picks them up.</sub>
+<sub>The lower two are still placeholders. Drop replacements into
+`docs/screenshots/` under the same names and the README picks them up.</sub>
 
 ---
 
