@@ -1,0 +1,209 @@
+/* Grab — options page. Tokens and reset come from lib/theme.css. */
+@import url('../lib/theme.css');
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 400 14px/1.5 'Inter', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 40px 24px 64px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 28px;
+}
+
+.mark {
+  display: block;
+}
+.mark-dark {
+  display: none;
+}
+:root[data-theme='dark'] .mark-light {
+  display: none;
+}
+:root[data-theme='dark'] .mark-dark {
+  display: block;
+}
+
+h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 620;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.card {
+  padding: 20px;
+  margin-bottom: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+h2 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 620;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.hint {
+  margin: 0 0 16px;
+  font-size: 12.5px;
+  color: var(--text-faint);
+}
+
+.hint:last-child {
+  margin-bottom: 0;
+}
+
+.field {
+  display: block;
+  margin-bottom: 14px;
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+input[type='text'] {
+  width: 100%;
+  padding: 9px 11px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+input[type='text']::placeholder {
+  color: var(--text-faint);
+}
+
+input[type='text']:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.btn {
+  padding: 8px 14px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 520;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
+}
+
+.btn:hover {
+  border-color: var(--accent);
+}
+
+.btn.primary {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.btn.primary:hover {
+  filter: brightness(1.08);
+}
+
+.btn.ghost {
+  color: var(--text-faint);
+  background: transparent;
+}
+
+.btn[aria-pressed='true'] {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.status {
+  margin-top: 14px;
+  padding: 9px 11px;
+  font-size: 12.5px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--text-faint);
+}
+
+.status[data-tone='ok'] {
+  border-left-color: #21a366;
+}
+
+.status[data-tone='error'] {
+  border-left-color: var(--danger);
+  color: var(--danger);
+}
+
+.facts {
+  margin: 14px 0 0;
+  font-size: 12.5px;
+}
+
+.facts > div {
+  display: flex;
+  gap: 12px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.facts dt {
+  flex: 0 0 92px;
+  color: var(--text-faint);
+}
+
+.facts dd {
+  margin: 0;
+  min-width: 0;
+  word-break: break-all;
+  font-variant-numeric: tabular-nums;
+}
+
+.code {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font: 12.5px/1.6 ui-monospace, 'Cascadia Mono', 'Consolas', monospace;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+code {
+  padding: 1px 4px;
+  font: 12px ui-monospace, 'Cascadia Mono', 'Consolas', monospace;
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+}

@@ -1,11 +1,19 @@
 /**
  * Grab — background service worker.
  *
- * Keeps, per tab, one picture of what the page is playing plus every media
- * source seen on the wire, and folds the two into a single list of download
- * qualities. Stream assembly happens in an offscreen document because service
- * workers have no URL.createObjectURL.
+ * Two download paths meet here.
+ *
+ * The local yt-dlp server is the good one: it knows every site, picks real
+ * formats, and muxes with ffmpeg. When it is running, downloads are its jobs
+ * and this worker just watches them and hands the finished file to Chrome.
+ *
+ * When it is not running, the worker falls back to what the browser alone can
+ * see — a per-tab index of media sniffed off the wire plus whatever the content
+ * script reports — and assembles streams in an offscreen document, because
+ * service workers have no URL.createObjectURL.
  */
+
+import { api, getApiBase } from './lib/api.js';
 
 const MAX_PER_TAB = 60;
 const MIN_FILE_BYTES = 64 * 1024; // ignore sprite/ad-sized blips
@@ -447,6 +455,171 @@ async function openAndDetect(url) {
   return { tabId: tab.id, found: false };
 }
 
+/* ------------------------------------------------------------ server jobs */
+
+const POLL_MS = 800;
+const watching = new Map(); // jobId -> interval id
+
+/**
+ * Server jobs outlive the popup and can outlive this worker, so the little we
+ * need to resume one is kept in session storage.
+ */
+async function rememberJob(jobId, rec) {
+  const { serverJobs = {} } = await chrome.storage.session.get('serverJobs');
+  serverJobs[jobId] = rec;
+  await chrome.storage.session.set({ serverJobs });
+}
+
+async function forgetJob(jobId) {
+  const { serverJobs = {} } = await chrome.storage.session.get('serverJobs');
+  delete serverJobs[jobId];
+  await chrome.storage.session.set({ serverJobs });
+}
+
+async function activeJobFor(tabId) {
+  const { serverJobs = {} } = await chrome.storage.session.get('serverJobs');
+  const hit = Object.entries(serverJobs).find(([, r]) => r.tabId === tabId);
+  return hit ? { jobId: hit[0], ...hit[1] } : null;
+}
+
+function stopWatching(jobId) {
+  clearInterval(watching.get(jobId));
+  watching.delete(jobId);
+}
+
+/**
+ * Polls one server job to completion. The repeated fetch also keeps this
+ * worker from being shut down mid-download.
+ */
+function watchJob(jobId, rec) {
+  if (watching.has(jobId)) return;
+
+  const tick = async () => {
+    let p;
+    try {
+      p = await api.progress(rec.remoteId, rec.base);
+    } catch (e) {
+      stopWatching(jobId);
+      await forgetJob(jobId);
+      emit({ type: 'progress', jobId, phase: 'error', error: String(e?.message || e) });
+      return;
+    }
+
+    if (p.status === 'error' || p.status === 'cancelled') {
+      stopWatching(jobId);
+      await forgetJob(jobId);
+      setBusyBadge(rec.tabId, false);
+      emit({
+        type: 'progress',
+        jobId,
+        phase: p.status === 'cancelled' ? 'cancelled' : 'error',
+        error: p.error || 'Download failed.',
+      });
+      return;
+    }
+
+    if (p.status === 'done') {
+      stopWatching(jobId);
+      setBusyBadge(rec.tabId, false);
+      try {
+        await chrome.downloads.download({
+          url: api.fileUrl(rec.remoteId, rec.base),
+          filename: p.filename || sanitize(p.title || rec.title) + '.mp4',
+          conflictAction: 'uniquify',
+        });
+        emit({ type: 'progress', jobId, phase: 'done', filename: p.filename, remoteId: rec.remoteId });
+      } catch (e) {
+        emit({ type: 'progress', jobId, phase: 'error', error: `Saved on the server, but Chrome refused it: ${e?.message || e}` });
+      }
+      await forgetJob(jobId);
+      return;
+    }
+
+    emit({
+      type: 'progress',
+      jobId,
+      phase: p.status === 'processing' ? 'processing' : p.status === 'preparing' ? 'preparing' : 'downloading',
+      percent: p.percent,
+      detail: [p.speed, p.eta && p.eta !== '00:00' ? `ETA ${p.eta}` : ''].filter(Boolean).join(' · '),
+    });
+  };
+
+  watching.set(jobId, setInterval(tick, POLL_MS));
+  tick();
+}
+
+function setBusyBadge(tabId, on) {
+  if (tabId == null) return;
+  chrome.action.setBadgeText({ tabId, text: on ? '↓' : '' }).catch(() => {});
+}
+
+async function startServerDownload({ tabId, url, option, title }) {
+  const base = await getApiBase();
+  const jobId = 'job' + ++jobSeq;
+
+  emit({ type: 'progress', jobId, phase: 'preparing' });
+  const res = await api.download(
+    {
+      url,
+      type: option?.type || 'mp4',
+      height: option?.height || 0,
+      format_id: option?.format_id || null,
+      title: title || '',
+    },
+    base
+  );
+
+  const rec = { remoteId: res.job_id, base, tabId: tabId ?? null, title: title || '', url };
+  await rememberJob(jobId, rec);
+  setBusyBadge(tabId, true);
+  watchJob(jobId, rec);
+  return { jobId, server: true };
+}
+
+/** Re-attach to anything still running after the worker was restarted. */
+async function resumeJobs() {
+  const { serverJobs = {} } = await chrome.storage.session.get('serverJobs');
+  for (const [jobId, rec] of Object.entries(serverJobs)) watchJob(jobId, rec);
+}
+resumeJobs();
+
+/* ----------------------------------------------------------- context menu */
+
+const MENU_CONTEXTS = ['page', 'video', 'audio', 'link'];
+
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({ id: 'grab', title: 'Download with Grab', contexts: MENU_CONTEXTS });
+    chrome.contextMenus.create({ id: 'grab-best', parentId: 'grab', title: 'Best quality (MP4)', contexts: MENU_CONTEXTS });
+    chrome.contextMenus.create({ id: 'grab-mp3', parentId: 'grab', title: 'Audio only (MP3)', contexts: MENU_CONTEXTS });
+    chrome.contextMenus.create({ id: 'grab-pick', parentId: 'grab', title: 'Choose quality…', contexts: MENU_CONTEXTS });
+  });
+});
+
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  // A right-click on a video or link targets that; anywhere else means the page.
+  const url = info.srcUrl || info.linkUrl || info.pageUrl;
+  if (!url) return;
+
+  if (info.menuItemId === 'grab-pick') {
+    // The popup cannot be opened reliably from here, so park the URL and let
+    // the badge invite a click.
+    await chrome.storage.session.set({ pendingUrl: url });
+    chrome.action.setBadgeText({ tabId: tab?.id, text: '?' }).catch(() => {});
+    chrome.action.openPopup?.().catch(() => {});
+    return;
+  }
+
+  const type = info.menuItemId === 'grab-mp3' ? 'mp3' : 'mp4';
+  try {
+    await startServerDownload({ tabId: tab?.id, url, option: { type, height: 0 }, title: tab?.title || '' });
+  } catch (e) {
+    setBusyBadge(tab?.id, false);
+    chrome.action.setBadgeText({ tabId: tab?.id, text: '!' }).catch(() => {});
+    emit({ type: 'progress', jobId: null, phase: 'error', error: String(e?.message || e) });
+  }
+});
+
 /* --------------------------------------------------------------- messages */
 
 const handlers = {
@@ -499,7 +672,36 @@ const handlers = {
         }
       : null;
 
-    return { playing, qualities: await qualitiesFor(msg.tabId) };
+    // The server is the preferred path, so report whether it answered. Local
+    // sniffing is only worth computing when it is the fallback in play.
+    const base = await getApiBase();
+    let server = { ok: false, base };
+    try {
+      const h = await api.health(base);
+      server = { ok: true, base, ffmpeg: !!h.ffmpeg, version: h.version, dir: h.download_dir };
+    } catch (e) {
+      server = { ok: false, base, error: String(e?.message || e) };
+    }
+
+    const { pendingUrl } = await chrome.storage.session.get('pendingUrl');
+    if (pendingUrl) await chrome.storage.session.remove('pendingUrl');
+
+    return {
+      playing,
+      server,
+      pendingUrl: pendingUrl || null,
+      job: await activeJobFor(msg.tabId),
+      qualities: server.ok ? [] : await qualitiesFor(msg.tabId),
+    };
+  },
+
+  /** Popup asked the server to fetch something; the job outlives the popup. */
+  serverDownload: (msg) =>
+    startServerDownload({ tabId: msg.tabId, url: msg.url, option: msg.option, title: msg.title }),
+
+  async reveal(msg) {
+    const base = await getApiBase();
+    return api.reveal(msg.remoteId, base);
   },
 
   async grabFrame(msg) {
@@ -518,6 +720,17 @@ const handlers = {
   download: (msg) => startDownload(msg),
 
   async cancel(msg) {
+    const { serverJobs = {} } = await chrome.storage.session.get('serverJobs');
+    const rec = serverJobs[msg.jobId];
+    if (rec) {
+      stopWatching(msg.jobId);
+      await forgetJob(msg.jobId);
+      setBusyBadge(rec.tabId, false);
+      await api.cancel(rec.remoteId, rec.base).catch(() => {});
+      emit({ type: 'progress', jobId: msg.jobId, phase: 'cancelled' });
+      return {};
+    }
+
     const job = jobs.get(msg.jobId);
     if (job?.downloadId != null) {
       await chrome.downloads.cancel(job.downloadId).catch(() => {});

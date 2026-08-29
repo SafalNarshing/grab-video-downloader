@@ -18,6 +18,14 @@
             <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2v3h-3" />
           </svg>
         </button>
+        <button class="icon" id="api-toggle" title="Server address" aria-label="Server address" aria-expanded="false">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="2" y="2.5" width="12" height="4.5" />
+            <rect x="2" y="9" width="12" height="4.5" />
+            <path d="M4.4 4.75h.01M4.4 11.25h.01" />
+          </svg>
+          <span class="dot" id="server-dot" data-state="unknown"></span>
+        </button>
         <button class="icon" id="theme" title="Switch theme" aria-label="Switch theme">
           <svg viewBox="0 0 16 16" class="sun" aria-hidden="true">
             <circle cx="8" cy="8" r="3.1" />
@@ -29,6 +37,20 @@
         </button>
       </div>
     </header>
+
+    <section class="apibar" id="apibar" hidden>
+      <input
+        class="apibar-input"
+        id="api-input"
+        type="text"
+        autocomplete="off"
+        spellcheck="false"
+        placeholder="http://127.0.0.1:8787"
+        aria-label="Server address"
+      />
+      <button class="apibar-btn" id="api-save" type="button">Save</button>
+      <button class="apibar-btn" id="api-more" type="button" title="All settings">More</button>
+    </section>
 
     <main class="stage" id="stage">
       <div class="empty" id="empty">
@@ -87,6 +109,6 @@
       </button>
     </footer>
 
-    <script src="popup.js"></script>
+    <script type="module" src="popup.js"></script>
   </body>
 </html>

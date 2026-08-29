@@ -1,0 +1,78 @@
+/* Grab — shared design tokens.
+
+   Imported by every extension page: the two themes, the square reset, and the
+   hidden-attribute fix. Page-specific layout lives beside each page. */
+
+/* ---------------------------------------------------------------- tokens */
+
+:root {
+  color-scheme: light;
+
+  --bg: #ededee;
+  --bg-2: #e2e2e4;
+  --surface: #f7f7f8;
+  --surface-2: #ffffff;
+  --line: #d2d2d6;
+  --line-soft: #dededf;
+  --text: #131315;
+  --text-dim: #6a6a72;
+  --text-faint: #93939c;
+  --accent: #2f5fe0;
+  --danger: #c02626;
+
+  /* Liquid glass */
+  --glass-fill: linear-gradient(160deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.28) 42%, rgba(255, 255, 255, 0.5));
+  --glass-edge: rgba(255, 255, 255, 0.85);
+  --glass-ring: rgba(20, 20, 30, 0.16);
+  --glass-top: rgba(255, 255, 255, 0.95);
+  --glass-bottom: rgba(255, 255, 255, 0.35);
+  --glass-drop: 0 10px 26px -10px rgba(18, 20, 34, 0.5);
+  --glass-text: #17171b;
+  --blob-a: #6f8cff;
+  --blob-b: #b46bff;
+  --blob-c: #4fd6c0;
+  --blob-alpha: 0.8;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg: #060607;
+  --bg-2: #0a0a0c;
+  --surface: #0e0e11;
+  --surface-2: #141418;
+  --line: #202026;
+  --line-soft: #17171c;
+  --text: #f2f2f4;
+  --text-dim: #8d8d99;
+  --text-faint: #5e5e69;
+  --accent: #6d90ff;
+  --danger: #ff6b6b;
+
+  --glass-fill: linear-gradient(160deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.05) 45%, rgba(255, 255, 255, 0.12));
+  --glass-edge: rgba(255, 255, 255, 0.32);
+  --glass-ring: rgba(0, 0, 0, 0.7);
+  --glass-top: rgba(255, 255, 255, 0.55);
+  --glass-bottom: rgba(255, 255, 255, 0.12);
+  --glass-drop: 0 12px 30px -10px rgba(0, 0, 0, 0.85);
+  --glass-text: #ffffff;
+  --blob-a: #4a6bff;
+  --blob-b: #9b3cff;
+  --blob-c: #16b39a;
+  --blob-alpha: 0.9;
+}
+
+/* ------------------------------------------------------------- structure */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  border-radius: 0; /* the whole panel is deliberately square */
+}
+
+/* Components below set display: flex/grid, which outranks the UA rule for the
+   hidden attribute. Restate it so toggling `hidden` actually hides. */
+[hidden] {
+  display: none !important;
+}

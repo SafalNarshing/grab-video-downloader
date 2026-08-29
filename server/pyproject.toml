@@ -1,0 +1,17 @@
+[project]
+name = "grab-server"
+version = "1.1.0"
+description = "Local yt-dlp download server for the Grab browser extension"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "yt-dlp>=2024.1.1",
+]
+
+[project.scripts]
+grab-server = "server:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

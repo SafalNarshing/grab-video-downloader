@@ -1,112 +1,206 @@
 # Grab — Video Downloader
 
-A Chrome/Edge extension (Manifest V3) that finds the video and audio a page is
-playing and saves it to disk. Progressive files download directly; HLS and DASH
-streams are rebuilt segment by segment in the browser.
+A personal video downloader in two parts:
+
+- **A local server** (`server/`) — FastAPI wrapping yt-dlp and ffmpeg. It knows
+  the sites, picks real formats, and muxes properly.
+- **A browser extension** (`src/`) — Manifest V3, unpacked. It detects what the
+  current tab is playing, shows it, and asks the server to fetch it.
+
+Start the server once and leave it running; after that the extension is the
+whole interface. Everything stays on your machine — the extension talks only to
+the address you configure, which defaults to `http://127.0.0.1:8787`.
 
 The panel is deliberately square — no rounded corners anywhere — with a near
-black dark theme, a grey-white light theme, and a single liquid-glass action
-button.
+black dark theme, a grey-white light theme, and a liquid-glass download button.
 
-## Install
+---
+
+## 1. Install the server
+
+You need **Python 3.10+** and **ffmpeg on your PATH**. ffmpeg is not optional:
+without it there is no merged MP4 above 720p and no MP3 at all.
+
+```bash
+# ffmpeg
+winget install Gyan.FFmpeg          # Windows
+brew install ffmpeg                 # macOS
+sudo apt install ffmpeg             # Debian/Ubuntu
+
+# the server itself
+pip install -r server/requirements.txt
+```
+
+Check it took: `ffmpeg -version` should print something.
+
+## 2. Start the server
+
+```bash
+python server/server.py
+```
+
+```
+Grab server on http://127.0.0.1:8787  ->  C:\Users\you\Downloads\Grab
+```
+
+Useful flags — each also readable from a `GRAB_*` environment variable:
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--port` | `8787` | Port to listen on |
+| `--dir` | `~/Downloads/Grab` | Where finished files land |
+| `--host` | `127.0.0.1` | Leave this alone unless you mean it |
+| `--workers` | `3` | Concurrent downloads |
+| `--cookies-from-browser` | off | `chrome`, `edge`, `firefox`, `brave` … |
+| `--cookies` | off | Path to a `cookies.txt` |
+
+`--cookies-from-browser chrome` is what makes private and logged-in videos work
+— Instagram, Facebook, and LinkedIn generally need it. Close Chrome first; it
+locks its cookie database while running.
+
+Keeping yt-dlp current matters more than anything else here, because sites
+change constantly: `pip install -U yt-dlp`.
+
+## 3. Load the extension
 
 1. Open `chrome://extensions` and turn on **Developer mode**.
-2. Choose **Load unpacked** and select this folder.
-3. Pin the extension so its badge stays visible — a dot means the tab has
-   something to grab.
+2. **Load unpacked** → select this folder.
+3. Pin it, so the badge stays visible.
 
-Requires Chrome or Edge 116+ (`chrome.runtime.getContexts` and the offscreen
-document API).
+Chrome or Edge **116+** (offscreen documents and `chrome.runtime.getContexts`).
 
-## Use
+## 4. Point it at your server
+
+Two places, same setting:
+
+- **In the popup** — the server button sits next to the theme toggle, with a dot
+  showing green when the server answers and red when it does not. Click it for
+  an inline field with the address, then **Save**.
+- **In the options page** — **More** in that bar, or the extension's Details →
+  Extension options. Adds a connection test that reports the yt-dlp version,
+  whether ffmpeg was found, and where files are being written.
+
+Only change it if you moved the server's port or host.
+
+---
+
+## Using it
 
 Press play, then open the panel. It shows the one video the page is playing —
-thumbnail, title, site, and length — not a list of every media URL that went
-past. Pick a resolution and press **Download**.
+thumbnail, title, site, length — not a list of every media URL that went past.
+Pick a quality and press **Download**.
 
-- **Quality** lists every source found for that video, best picture first, one
-  entry per resolution. Audio-only sinks to the bottom.
-- While a download runs the glass button fills with progress; clicking it
-  cancels.
-- The circular arrow re-scans, which helps on tabs that were already open when
-  the extension was installed, and after a single-page navigation.
+- **Quality** comes from yt-dlp: a resolution ladder for what the site actually
+  has, plus **Audio only** for MP3.
+- The glass button fills with progress and reports `preparing → downloading →
+  merging → saved`. Clicking it mid-run cancels.
+- When it finishes, the file is pulled into your normal Downloads folder *and*
+  kept in the server's directory. The completion note is clickable — it opens
+  that folder.
+- **Paste a link** at the bottom for anything outside the current tab. With the
+  server running this is the main path: paste a YouTube, Instagram, or LinkedIn
+  URL and it resolves straight away.
+- **Right-click** any page, video, or link → **Download with Grab** → best MP4,
+  audio-only MP3, or choose a quality.
 
-### Pasting a link
+### If the server is not running
 
-The field at the bottom takes either kind of link:
+The extension falls back to what a browser can do alone: sniffing media off the
+network, reading `<video>` from the DOM, and assembling HLS/DASH segments in an
+offscreen document. The dot turns red and a note says so.
 
-- A **direct media link** (`.mp4`, `.m3u8`, `.mpd`, …) is adopted straight away
-  and appears as a quality option.
-- A **page link** is opened in a background tab, because a watch page only
-  hands over its video once a real browser loads and plays it. Grab waits about
-  twelve seconds for that tab to reveal something. If the site does not
-  autoplay, press play in the tab it opened and hit rescan.
+That path is strictly worse — no muxing, so split streams save as separate video
+and audio files; no MP3 conversion; no site-specific extraction. It exists so
+the extension still does something useful before you have started the server,
+not as an equal alternative.
 
-There is no page scraping and no URL-signature work behind this — it is the
-browser doing what it would normally do, with the sniffer watching.
+---
 
-## How it works
+## Layout
 
-| File | Role |
+```
+manifest.json            MV3, module service worker
+server/
+  server.py              FastAPI + yt-dlp; also the entrypoint
+  requirements.txt
+  pyproject.toml
+src/
+  background.js          Server jobs, context menus, sniffing, fallback downloads
+  content.js             Picks the playing video; reports title/poster/length
+  lib/api.js             Server client, shared by worker, popup, and options
+  lib/theme.css          Design tokens and reset, shared by every page
+  offscreen/             HLS/DASH assembly (fallback only)
+  options/               Full settings page
+  popup/                 The panel (+ preview.html, a dev harness)
+tools/make-icons.py      Regenerates every icon from logo.jpg
+icons/                   Generated — do not edit by hand
+```
+
+### Server API
+
+| Endpoint | Purpose |
 | --- | --- |
-| `src/background.js` | Service worker. Watches responses via `webRequest`, keeps a per-tab index, and drives the downloads API. |
-| `src/content.js` | Picks the video the user is watching — scored on size, visibility, and whether it is playing — and reports its title, poster, and length. Also acts as a fallback downloader using the page's own cookies and referrer. |
-| `src/offscreen/offscreen.js` | Parses HLS playlists and DASH manifests, fetches segments (6 at a time), and concatenates them into a Blob. Lives in an offscreen document because service workers have no `URL.createObjectURL`. |
-| `src/popup/` | The panel: hero card, theme toggle, quality selector, paste-a-link row, glass button. |
-| `tools/make-icons.py` | Regenerates every icon from `logo.jpg` — the toolbar tiles plus the tinted header marks. Run with `python tools/make-icons.py`. |
+| `GET /health` | Status, versions, whether ffmpeg was found, download directory |
+| `POST /info` | `{url}` → title, thumbnail, duration, and a ready-made `options` list |
+| `POST /download` | `{url, type, height, format_id}` → `{job_id}` |
+| `GET /progress/{id}` | `status`, `percent`, `speed`, `eta`, `filename`, `error` |
+| `GET /file/{id}` | The finished file |
+| `POST /cancel/{id}` | Stop a running job |
+| `POST /reveal/{id}` | Open the containing folder locally |
+| `GET /jobs` | Everything this run has done |
 
-Detection uses two independent paths because neither is sufficient alone: the
-network sniffer catches streams the DOM never exposes, and the content script
-catches players that loaded before the extension woke up. The two are folded
-together per tab — the content script says *what* is playing, the sniffer says
-*where it can be fetched from* — which is what turns a pile of URLs into one
-video with a quality list.
+`/info` returns a short curated `options` list rather than yt-dlp's raw format
+table, so the extension never reasons about codecs — it just echoes one option
+back to `/download`.
 
-Every frame reports independently, so an embedded player wins the video while
-the top frame still supplies the page's title and thumbnail.
+---
 
-## Branding
+## Notes worth reading
 
-`logo.jpg` is the single source of truth for artwork. `tools/make-icons.py`
-crops it to the mark and emits both families it is used in: the toolbar icons
-keep the logo's own light tile so they stay legible on any toolbar, while the
-popup header uses a background-removed copy tinted per theme — dark ink on the
-light panel, white on the black one.
+**CORS is the access control.** The server only accepts browser-extension
+origins. A normal web page cannot reach it: every endpoint requires
+`application/json`, which forces a preflight that this policy rejects for
+`http(s)` origins. Keep `--host` on loopback — this process downloads any URL it
+is handed, and binding it to `0.0.0.0` hands that to your whole network.
 
-## Limits worth knowing
+**`<all_urls>` is in the permissions.** It is needed for the media sniffing that
+powers detection and the offline fallback, and the API address is
+user-configurable so it cannot be narrowed to localhost. The rest is minimal:
+`downloads`, `storage`, `tabs`, `webRequest`, `offscreen`, `scripting`,
+`contextMenus`.
 
-These are real constraints, not TODOs:
+**Live streams** download only the window the playlist currently advertises.
 
-- **No muxing.** When a stream keeps video and audio in separate tracks — which
-  DASH almost always does, and HLS often does — you get two files, labelled
-  `(video)` and `(audio)`. Joining them needs a tool like `ffmpeg`:
-  `ffmpeg -i in.video.mp4 -i in.audio.m4a -c copy out.mp4`.
-- **No encrypted or DRM streams.** Playlists carrying `EXT-X-KEY`, and DASH
-  manifests with a `ContentProtection` block, are reported as unsupported. This
-  extension does not decrypt anything.
-- **YouTube is partial.** Its progressive stream (360p) is usually grabbable
-  with sound; higher qualities are adaptive and arrive as separate video and
-  audio files with short-lived signed URLs, so they must be muxed and can
-  expire mid-job. Those entries are marked `no audio` in the quality list so
-  the trade-off is visible before you download. Sites that serve plain MP4 —
-  Instagram, LinkedIn, Twitter/X, Reddit, most news and course sites — behave
-  much better.
-- **Streams are assembled in memory.** A long, high-bitrate stream can use a lot
-  of RAM before it reaches disk. Progressive files stream straight to disk and
-  are unaffected.
-- **Live streams** download only the window the playlist currently advertises.
+**DRM is out of scope.** Netflix, Disney+, and anything else using Widevine or
+FairPlay will not work, and no part of this attempts to decrypt them.
 
-Downloading is subject to the terms of the site you are on and to copyright.
-Use it on material you have the right to keep.
+Downloading is subject to the terms of the site you are on and to copyright. Use
+it on material you have the right to keep.
 
-## Developing the UI
+---
 
-`src/popup/preview.html` renders the panel in a normal browser tab with stub
-data, so you can iterate on the CSS without reloading the extension. It is not
-referenced by the manifest.
+## Working on the UI
 
+`src/popup/preview.html` renders the panel with stub data and a stubbed server,
+so you can iterate on CSS without reloading the extension. It is not referenced
+by the manifest.
+
+It has to be served over HTTP — the popup uses ES modules, which browsers refuse
+to load from `file://`:
+
+```bash
+python -m http.server 8899
+# http://127.0.0.1:8899/src/popup/preview.html?theme=dark&state=playing
+#   theme = dark | light
+#   state = playing | empty | busy | offline | apibar
 ```
-chrome src/popup/preview.html?theme=dark
-chrome src/popup/preview.html?theme=light&state=empty
-chrome src/popup/preview.html?theme=dark&state=busy
+
+Icons are generated from `logo.jpg`, the single source of truth for artwork:
+
+```bash
+python tools/make-icons.py
 ```
+
+It crops to the mark and emits both families — toolbar tiles that keep the
+logo's light background so they read on any toolbar, and background-removed
+header marks tinted per theme.

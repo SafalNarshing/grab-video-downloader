@@ -5,11 +5,13 @@
     <link rel="stylesheet" href="popup.css" />
     <title>Grab preview</title>
     <script>
-      // Dev harness: stubs just enough of the extension APIs to render the popup
-      // in a plain browser tab. Not referenced by the manifest. See README.
+      // Dev harness: stubs the extension APIs and the local server so the popup
+      // renders in a plain browser tab. Not referenced by the manifest.
+      //   ?theme=dark|light  ?state=playing|empty|busy|offline
       const Q = new URLSearchParams(location.search);
       const THEME = Q.get('theme') || 'dark';
       const MODE = Q.get('state') || 'playing';
+      const SERVER_UP = MODE !== 'offline';
 
       const POSTER =
         'data:image/svg+xml;utf8,' +
@@ -25,34 +27,75 @@
            </svg>`
         );
 
-      const PLAYING = {
-        hasVideo: true,
-        playing: true,
-        live: false,
-        title: 'Building a browser extension from scratch — full walkthrough',
-        site: 'youtube.com',
-        poster: POSTER,
-        duration: 2734,
-        height: 1080,
+      const INFO = {
+        title: 'Big Buck Bunny 60fps 4K — Official Blender Foundation Short Film',
+        thumbnail: POSTER,
+        duration: 635,
+        uploader: 'Blender',
+        extractor: 'Youtube',
+        webpage_url: 'https://www.youtube.com/watch?v=aqz-KE-bpKQ',
+        is_live: false,
+        options: [
+          { key: 'best', label: 'Best available', detail: 'MP4', type: 'mp4', height: 0 },
+          { key: 'h2160', label: '2160p', detail: 'MP4 · 689 MB', type: 'mp4', height: 2160 },
+          { key: 'h1080', label: '1080p', detail: 'MP4 · 128 MB', type: 'mp4', height: 1080 },
+          { key: 'h720', label: '720p', detail: 'MP4 · 78 MB', type: 'mp4', height: 720 },
+          { key: 'mp3', label: 'Audio only', detail: 'MP3 · 192 kbps', type: 'mp3', height: 0 },
+        ],
       };
 
-      const QUALITIES = [
-        { key: 'a', itemId: 'a', variant: null, label: '1080p', detail: '412 MB · no audio', height: 1080 },
-        { key: 'b', itemId: 'b', variant: null, label: '720p', detail: '186 MB', height: 720 },
-        { key: 'c', itemId: 'c', variant: null, label: '360p', detail: '64 MB', height: 360 },
-        { key: 'd', itemId: 'd', variant: null, label: 'Audio only', detail: '38 MB', height: 0, audioOnly: true },
+      const LOCAL_QUALITIES = [
+        { key: 'a', itemId: 'a', label: '720p', detail: '78 MB', height: 720 },
+        { key: 'b', itemId: 'b', label: '360p', detail: '24 MB', height: 360 },
       ];
 
+      // Stand in for the local server.
+      window.fetch = async (url) => {
+        const path = String(url);
+        if (!SERVER_UP) throw new TypeError('Failed to fetch');
+        const body = path.includes('/health')
+          ? { status: 'ok', app: 'Grab', version: '1.1.0', yt_dlp: '2026.08.19', ffmpeg: true }
+          : INFO;
+        return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+      };
+
       window.chrome = {
-        storage: { local: { get: async () => ({ theme: THEME }), set: async () => {} } },
-        tabs: { query: async () => [{ id: 1 }], sendMessage: async () => ({ ok: true }) },
+        storage: {
+          local: {
+            get: async (k) => (k === 'theme' ? { theme: THEME } : { apiBase: 'http://127.0.0.1:8787' }),
+            set: async () => {},
+          },
+        },
+        tabs: {
+          query: async () => [{ id: 1, url: INFO.webpage_url, title: INFO.title }],
+          sendMessage: async () => ({ ok: true }),
+        },
         scripting: { executeScript: async () => {} },
         runtime: {
+          openOptionsPage: () => {},
           onMessage: { addListener: () => {} },
           sendMessage: async (m) => {
             if (m.type !== 'state') return {};
-            if (MODE === 'empty') return { playing: null, qualities: [] };
-            return { playing: PLAYING, qualities: QUALITIES };
+            return {
+              server: SERVER_UP
+                ? { ok: true, base: 'http://127.0.0.1:8787', ffmpeg: true }
+                : { ok: false, base: 'http://127.0.0.1:8787', error: 'refused' },
+              pendingUrl: null,
+              job: null,
+              playing:
+                MODE === 'empty'
+                  ? null
+                  : {
+                      hasVideo: true,
+                      title: INFO.title,
+                      poster: POSTER,
+                      site: 'youtube.com',
+                      duration: 635,
+                      height: 1080,
+                      live: false,
+                    },
+              qualities: MODE === 'empty' ? [] : LOCAL_QUALITIES,
+            };
           },
         },
       };
@@ -71,6 +114,14 @@
             <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2v3h-3" />
           </svg>
         </button>
+        <button class="icon" id="api-toggle" aria-label="Server address" aria-expanded="false">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="2" y="2.5" width="12" height="4.5" />
+            <rect x="2" y="9" width="12" height="4.5" />
+            <path d="M4.4 4.75h.01M4.4 11.25h.01" />
+          </svg>
+          <span class="dot" id="server-dot" data-state="unknown"></span>
+        </button>
         <button class="icon" id="theme" aria-label="Switch theme">
           <svg viewBox="0 0 16 16" class="sun" aria-hidden="true">
             <circle cx="8" cy="8" r="3.1" />
@@ -82,6 +133,20 @@
         </button>
       </div>
     </header>
+
+    <section class="apibar" id="apibar" hidden>
+      <input
+        class="apibar-input"
+        id="api-input"
+        type="text"
+        autocomplete="off"
+        spellcheck="false"
+        placeholder="http://127.0.0.1:8787"
+        aria-label="Server address"
+      />
+      <button class="apibar-btn" id="api-save" type="button">Save</button>
+      <button class="apibar-btn" id="api-more" type="button">More</button>
+    </section>
 
     <main class="stage" id="stage">
       <div class="empty" id="empty">
@@ -140,16 +205,19 @@
       </button>
     </footer>
 
-    <script src="popup.js"></script>
-    <script>
+    <script type="module" src="popup.js"></script>
+    <script type="module">
       if (MODE === 'busy') {
-        addEventListener('load', () =>
-          setTimeout(() => {
-            setButton('Downloading  62%', { busy: true, percent: 62 });
-            setNote('148 / 240 segments');
-          }, 200)
-        );
+        setTimeout(() => {
+          document.getElementById('download-label').textContent = 'Downloading  62%';
+          document.getElementById('fill').style.width = '62%';
+          document.getElementById('download').classList.add('busy');
+          const note = document.getElementById('note');
+          note.textContent = '4.20MiB/s · ETA 00:38';
+          note.hidden = false;
+        }, 400);
       }
+      if (MODE === 'apibar') setTimeout(() => (document.getElementById('apibar').hidden = false), 300);
     </script>
   </body>
 </html>

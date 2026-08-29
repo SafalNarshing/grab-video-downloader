@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="options.css" />
+    <title>Grab settings</title>
+  </head>
+  <body>
+    <main class="page">
+      <header class="head">
+        <img class="mark mark-light" src="../../icons/mark-light.png" alt="" width="22" height="22" />
+        <img class="mark mark-dark" src="../../icons/mark-dark.png" alt="" width="22" height="22" />
+        <h1>Grab settings</h1>
+      </header>
+
+      <section class="card">
+        <h2>Local server</h2>
+        <p class="hint">
+          Grab does its real work through a yt-dlp server running on your own machine. Point it
+          wherever you started that server.
+        </p>
+
+        <label class="field">
+          <span class="field-label">API base URL</span>
+          <input
+            id="api"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="http://127.0.0.1:8787"
+          />
+        </label>
+
+        <div class="row">
+          <button class="btn primary" id="save">Save</button>
+          <button class="btn" id="test">Test connection</button>
+          <button class="btn ghost" id="reset">Reset to default</button>
+        </div>
+
+        <div class="status" id="status" hidden></div>
+
+        <dl class="facts" id="facts" hidden>
+          <div><dt>Server</dt><dd id="f-version">—</dd></div>
+          <div><dt>yt-dlp</dt><dd id="f-ytdlp">—</dd></div>
+          <div><dt>ffmpeg</dt><dd id="f-ffmpeg">—</dd></div>
+          <div><dt>Saves to</dt><dd id="f-dir">—</dd></div>
+          <div><dt>Cookies</dt><dd id="f-cookies">—</dd></div>
+        </dl>
+      </section>
+
+      <section class="card">
+        <h2>Appearance</h2>
+        <div class="row">
+          <button class="btn" id="theme-light">Light</button>
+          <button class="btn" id="theme-dark">Dark</button>
+        </div>
+        <p class="hint">The popup's moon and sun button changes this too.</p>
+      </section>
+
+      <section class="card">
+        <h2>Starting the server</h2>
+        <p class="hint">From the folder you loaded this extension out of:</p>
+        <pre class="code">pip install -r server/requirements.txt
+python server/server.py</pre>
+        <p class="hint">
+          Add <code>--cookies-from-browser chrome</code> to reach videos that need you to be
+          logged in, or <code>--dir &lt;path&gt;</code> to change where files land. ffmpeg must be
+          on your PATH for merged MP4 and MP3 output.
+        </p>
+      </section>
+    </main>
+
+    <script type="module" src="options.js"></script>
+  </body>
+</html>
