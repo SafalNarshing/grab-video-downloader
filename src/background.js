@@ -597,9 +597,56 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
-chrome.contextMenus.onClicked.addListener((info) => {
-  // A right-click on a video or link targets that; anywhere else means the page.
-  const url = info.srcUrl || info.linkUrl || info.selectionText?.trim() || info.pageUrl;
+/** Share and analytics noise; none of it identifies the video. */
+const TRACKING_RE =
+  /^(?:utm_\w+|fbclid|gclid|igshid|igsh|si|feature|ref|ref_src|ref_url|mc_cid|mc_eid|yclid|_ga|s|t|pp)$/i;
+
+function cleanUrl(raw) {
+  try {
+    const u = new URL(raw);
+    for (const key of [...u.searchParams.keys()]) {
+      if (TRACKING_RE.test(key)) u.searchParams.delete(key);
+    }
+    u.hash = '';
+    return u.toString();
+  } catch {
+    return raw;
+  }
+}
+
+/**
+ * Works out which URL the right-click meant.
+ *
+ * Never the media src: on Instagram, Facebook, and anything using MediaSource
+ * that is a blob: handle or a signed CDN chunk, and the server can do nothing
+ * with either. What it wants is the page the video lives on, which on a feed
+ * means the individual post rather than the address bar.
+ */
+async function resolveContextUrl(info, tab) {
+  // Right-clicking a link is the most explicit signal there is.
+  if (info.linkUrl && /^https?:/i.test(info.linkUrl)) return cleanUrl(info.linkUrl);
+
+  const selected = info.selectionText?.trim();
+  if (selected && /^https?:\/\/\S+$/i.test(selected)) return cleanUrl(selected);
+
+  // Ask the frame that was clicked: it can see the post permalink around the
+  // element, and an embedded player knows its own URL.
+  if (tab?.id != null) {
+    const res = await chrome.tabs
+      .sendMessage(tab.id, { type: 'contextUrl' }, { frameId: info.frameId ?? 0 })
+      .catch(() => null);
+    if (res?.url && /^https?:/i.test(res.url)) return cleanUrl(res.url);
+  }
+
+  if (info.frameUrl && /^https?:/i.test(info.frameUrl)) return cleanUrl(info.frameUrl);
+  if (info.pageUrl && /^https?:/i.test(info.pageUrl)) return cleanUrl(info.pageUrl);
+
+  // Last resort, and only if it is actually fetchable.
+  return info.srcUrl && /^https?:/i.test(info.srcUrl) ? info.srcUrl : '';
+}
+
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  const url = await resolveContextUrl(info, tab);
   if (url) openDownloader(url);
 });
 

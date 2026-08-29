@@ -157,6 +157,59 @@ for (const evt of ['play', 'pause', 'loadedmetadata', 'durationchange', 'seeked'
   document.addEventListener(evt, scheduleReport, true);
 }
 
+/* ------------------------------------------------- right-click target URL */
+
+/**
+ * There is no API that hands the context menu the element that was clicked, so
+ * the page has to remember it.
+ */
+let lastContextTarget = null;
+document.addEventListener(
+  'contextmenu',
+  (e) => {
+    lastContextTarget = e.target;
+  },
+  true
+);
+
+/** URL shapes that identify a single post rather than a feed or profile. */
+const PERMALINK_RE =
+  /\/(?:p|reel|reels|tv|shorts|status|story|video|videos|watch|posts|activity|feed\/update)\/|[?&]v=/i;
+
+/**
+ * Walks outward from the clicked element for the nearest post permalink. On a
+ * feed the address bar says nothing useful, but each post carries its own link
+ * — usually on the timestamp.
+ */
+function permalinkNear(el) {
+  let node = el;
+  for (let depth = 0; node && depth < 14; depth++, node = node.parentElement) {
+    if (node.tagName === 'A' && PERMALINK_RE.test(node.getAttribute('href') || '')) return node.href;
+    for (const a of node.querySelectorAll?.('a[href]') || []) {
+      if (PERMALINK_RE.test(a.getAttribute('href') || '')) return a.href;
+    }
+  }
+  return '';
+}
+
+function canonicalUrl() {
+  const canon = document.querySelector('link[rel="canonical"]')?.href;
+  if (canon) return canon;
+  const og = meta('meta[property="og:url"]');
+  return og ? absolute(og) : '';
+}
+
+/**
+ * The clean page URL that the server can actually resolve — never the media
+ * src, which is typically a blob: handle or a raw CDN chunk.
+ */
+function contextUrl() {
+  // Already on a post page? Then that is the answer. Hunting for a nearer link
+  // here would find a recommendation or a related post instead.
+  if (PERMALINK_RE.test(location.pathname + location.search)) return canonicalUrl() || location.href;
+  return permalinkNear(lastContextTarget) || canonicalUrl() || location.href;
+}
+
 /* ------------------------------------------------------------------ inbound */
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -164,6 +217,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     seen.clear();
     report();
     sendResponse({ ok: true });
+    return;
+  }
+
+  if (msg?.type === 'contextUrl') {
+    sendResponse({ url: contextUrl() });
     return;
   }
 

@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>contextUrl resolution test</title>
+    <link rel="canonical" href="https://example.com/canonical-from-head/" />
+    <script>
+      // Minimal stand-in for the extension APIs so src/content.js can load.
+      const listeners = [];
+      window.chrome = {
+        runtime: {
+          sendMessage: async () => ({}),
+          onMessage: { addListener: (fn) => listeners.push(fn) },
+        },
+      };
+      // Ask the content script what URL a right-click would resolve to.
+      window.askContextUrl = () => {
+        let out;
+        for (const fn of listeners) fn({ type: 'contextUrl' }, {}, (r) => (out = r));
+        return out?.url;
+      };
+      window.rightClick = (el) => el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
+    </script>
+  </head>
+  <body>
+    <!-- A feed: the address bar says nothing, each post carries its own link. -->
+    <main id="feed">
+      <article id="post-a">
+        <header><a href="/someuser/">someuser</a></header>
+        <video id="video-a" src="blob:https://example.com/9f2c-not-fetchable"></video>
+        <footer><a id="permalink-a" href="/p/ABC123/"><time>2h</time></a></footer>
+      </article>
+
+      <article id="post-b">
+        <video id="video-b" src="blob:https://example.com/aa11-not-fetchable"></video>
+        <footer><a href="/reel/ZZZ999/"><time>5h</time></a></footer>
+      </article>
+    </main>
+
+    <!-- A watch page: sidebar links must NOT win over the page's own URL. -->
+    <section id="watch" hidden>
+      <div id="player"><video id="video-watch"></video></div>
+      <aside>
+        <a href="/watch?v=RECOMMENDED_ONE">next up</a>
+        <a href="/watch?v=RECOMMENDED_TWO">and another</a>
+      </aside>
+    </section>
+
+    <!-- Nothing post-shaped anywhere. -->
+    <section id="bare" hidden><video id="video-bare"></video></section>
+
+    <script src="../src/content.js"></script>
+    <script>
+      const results = [];
+      const check = (name, path, targetId, expected, note) => {
+        history.replaceState({}, '', path);
+        rightClick(document.getElementById(targetId));
+        const got = askContextUrl();
+        results.push({ name, expected, got, pass: got === expected, note });
+      };
+
+      const origin = location.origin;
+
+      check(
+        'feed → nearest post permalink',
+        '/',
+        'video-a',
+        `${origin}/p/ABC123/`,
+        'the blob: src must be ignored'
+      );
+      check('feed → the post actually clicked', '/', 'video-b', `${origin}/reel/ZZZ999/`);
+
+      // On a permalink page the canonical wins; walking the DOM here would find
+      // a recommendation instead of the video being watched.
+      document.getElementById('feed').hidden = true;
+      document.getElementById('watch').hidden = false;
+      check(
+        'watch page → canonical, not a sidebar recommendation',
+        '/watch?v=REAL_VIDEO',
+        'video-watch',
+        'https://example.com/canonical-from-head/'
+      );
+
+      document.getElementById('watch').hidden = true;
+      document.getElementById('bare').hidden = false;
+      check(
+        'post page → canonical',
+        '/p/SOMEPOST/',
+        'video-bare',
+        'https://example.com/canonical-from-head/'
+      );
+
+      document.documentElement.setAttribute('data-results', JSON.stringify(results));
+      document.title = results.every((r) => r.pass) ? 'ALL PASS' : 'FAILURES';
+    </script>
+  </body>
+</html>

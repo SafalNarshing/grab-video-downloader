@@ -14,6 +14,17 @@ the address you configure, which defaults to `http://127.0.0.1:8787`.
 The panel is deliberately square — no rounded corners anywhere — with a near
 black dark theme, a grey-white light theme, and a liquid-glass download button.
 
+## Screenshots
+
+| | |
+| --- | --- |
+| <img src="docs/screenshots/01-now-playing.png" alt="The panel showing the video a page is playing" width="420"> | **Now playing** — thumbnail, title, site and length for the one video the page is playing. |
+| <img src="docs/screenshots/02-quality-and-download.png" alt="Quality list and the download button mid-progress" width="420"> | **Quality and download** — the yt-dlp quality ladder, and the glass button filling with progress. |
+| <img src="docs/screenshots/03-right-click-window.png" alt="The detached download window opened from the context menu" width="420"> | **Right-click to a window** — *Download with Grab…* opens a window that stays put. |
+
+<sub>Those three files are placeholders. Replace them in `docs/screenshots/`
+keeping the same names and the README picks them up.</sub>
+
 ---
 
 ## 1. Install the server
@@ -134,6 +145,27 @@ was disappearing. The panel now reads progress straight from the server rather
 than waiting to be told, so it reports the truth even if the extension's
 background worker has been suspended in the meantime.
 
+### Which link the right-click uses
+
+Never the media source. On Instagram, Facebook, and anything else built on
+MediaSource, the video element's `src` is a `blob:` handle or a signed CDN
+chunk, and the server can do nothing with either. What it wants is the page the
+video lives on. So, in order:
+
+1. The link you right-clicked, if you right-clicked one.
+2. A selected URL, if you right-clicked a selection.
+3. **The post's own permalink** — on a feed the address bar points at the feed,
+   not the video, so the page is asked for the nearest post link around the
+   element you clicked. On a page that is already a post or a watch page, its
+   canonical URL is used directly; hunting the DOM there would find a
+   recommendation instead of what you are watching.
+4. The frame URL, then the page URL. An embedded player reports its own URL,
+   which yt-dlp handles even when the surrounding article is not recognised.
+
+Tracking parameters are stripped, so what lands in the link field is the clean
+permalink: `utm_*`, `fbclid`, `igshid`, `si`, `t`, and the rest. Meaningful ones
+survive — YouTube's `v`, Vimeo's privacy `h`.
+
 ### If the server is not running
 
 The extension falls back to what a browser can do alone: sniffing media off the
@@ -230,6 +262,11 @@ python -m http.server 8899
 # Headless screenshots below ~500px wide get cropped rather than reflowed,
 # so check narrow layouts at 520px or wider.
 ```
+
+`tools/context-url-test.html` checks the right-click URL resolution against
+feed, watch-page, and permalink markup. Open it over the same HTTP server; the
+tab title reads `ALL PASS` or `FAILURES`, and `<html data-results>` carries the
+detail.
 
 Icons are generated from `logo.jpg`, the single source of truth for artwork:
 
