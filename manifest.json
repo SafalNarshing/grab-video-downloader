@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Grab \u2014 Video Downloader",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Detects the video a page is playing and downloads it through a local yt-dlp server, with quality choice and MP3 audio.",
   "minimum_chrome_version": "116",
   "icons": {
