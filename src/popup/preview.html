@@ -7,26 +7,53 @@
     <script>
       // Dev harness: stubs just enough of the extension APIs to render the popup
       // in a plain browser tab. Not referenced by the manifest. See README.
-      const THEME = new URLSearchParams(location.search).get('theme') || 'dark';
-      const ITEMS = [
-        { id: '1', url: 'https://cdn.example.com/assets/keynote-final-cut.mp4', kind: 'file', name: 'keynote-final-cut', mime: 'video/mp4', size: 148000000, height: 1080, duration: 754, origin: 'cdn.example.com' },
-        { id: '2', url: 'https://stream.example.tv/live/master.m3u8', kind: 'hls', name: 'Live session — opening night', mime: 'application/x-mpegURL', size: 0, origin: 'stream.example.tv' },
-        { id: '3', url: 'https://video.example.net/dash/documentary-ep04.mpd', kind: 'dash', name: 'documentary-ep04', mime: 'application/dash+xml', size: 0, height: 720, origin: 'video.example.net' },
-        { id: '4', url: 'https://scontent.example.com/v/reel_2f9a1c.mp4', kind: 'file', name: 'reel_2f9a1c', mime: 'video/mp4', size: 8400000, height: 640, duration: 31, origin: 'scontent.example.com' },
-        { id: '5', url: 'https://audio.example.org/eps/episode-212-audio.m4a', kind: 'audio', name: 'episode-212-audio', mime: 'audio/mp4', size: 32000000, duration: 2130, origin: 'audio.example.org' },
+      const Q = new URLSearchParams(location.search);
+      const THEME = Q.get('theme') || 'dark';
+      const MODE = Q.get('state') || 'playing';
+
+      const POSTER =
+        'data:image/svg+xml;utf8,' +
+        encodeURIComponent(
+          `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360">
+             <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+               <stop offset="0" stop-color="#1b2a6b"/><stop offset="0.55" stop-color="#5a2a8f"/>
+               <stop offset="1" stop-color="#0d5f63"/></linearGradient></defs>
+             <rect width="640" height="360" fill="url(#g)"/>
+             <circle cx="470" cy="96" r="120" fill="#ffffff" opacity="0.10"/>
+             <circle cx="150" cy="300" r="150" fill="#000000" opacity="0.18"/>
+             <path d="M282 140l86 40-86 40z" fill="#ffffff" opacity="0.9"/>
+           </svg>`
+        );
+
+      const PLAYING = {
+        hasVideo: true,
+        playing: true,
+        live: false,
+        title: 'Building a browser extension from scratch — full walkthrough',
+        site: 'youtube.com',
+        poster: POSTER,
+        duration: 2734,
+        height: 1080,
+      };
+
+      const QUALITIES = [
+        { key: 'a', itemId: 'a', variant: null, label: '1080p', detail: '412 MB · no audio', height: 1080 },
+        { key: 'b', itemId: 'b', variant: null, label: '720p', detail: '186 MB', height: 720 },
+        { key: 'c', itemId: 'c', variant: null, label: '360p', detail: '64 MB', height: 360 },
+        { key: 'd', itemId: 'd', variant: null, label: 'Audio only', detail: '38 MB', height: 0, audioOnly: true },
       ];
+
       window.chrome = {
         storage: { local: { get: async () => ({ theme: THEME }), set: async () => {} } },
         tabs: { query: async () => [{ id: 1 }], sendMessage: async () => ({ ok: true }) },
         scripting: { executeScript: async () => {} },
         runtime: {
           onMessage: { addListener: () => {} },
-          sendMessage: async (m) =>
-            m.type === 'list'
-              ? { items: ITEMS }
-              : m.type === 'variants'
-                ? { variants: [{ id: 'a', label: '1080p · 5400 kbps' }, { id: 'b', label: '720p · 2800 kbps' }] }
-                : {},
+          sendMessage: async (m) => {
+            if (m.type !== 'state') return {};
+            if (MODE === 'empty') return { playing: null, qualities: [] };
+            return { playing: PLAYING, qualities: QUALITIES };
+          },
         },
       };
     </script>
@@ -37,7 +64,6 @@
         <img class="mark mark-light" src="../../icons/mark-light.png" alt="" width="17" height="17" />
         <img class="mark mark-dark" src="../../icons/mark-dark.png" alt="" width="17" height="17" />
         <h1>Grab</h1>
-        <span class="count" id="count" hidden></span>
       </div>
       <div class="tools">
         <button class="icon" id="rescan" aria-label="Scan again">
@@ -57,12 +83,23 @@
       </div>
     </header>
 
-    <main id="list" class="list" tabindex="-1">
+    <main class="stage" id="stage">
       <div class="empty" id="empty">
         <span class="pulse" aria-hidden="true"></span>
-        <p class="empty-title">Nothing detected yet</p>
-        <p class="empty-note">Start playing the video, then reopen this panel.</p>
+        <p class="empty-title">Nothing playing</p>
+        <p class="empty-note">Press play on the video, then reopen this panel — or paste a link below.</p>
       </div>
+
+      <article class="hero" id="hero" hidden>
+        <div class="thumb" id="thumb">
+          <img class="thumb-img" id="thumb-img" alt="" hidden />
+          <span class="thumb-blank" id="thumb-blank" aria-hidden="true"></span>
+          <span class="chip chip-time" id="chip-time" hidden></span>
+          <span class="chip chip-live" id="chip-live" hidden>LIVE</span>
+        </div>
+        <h2 class="title" id="title"></h2>
+        <p class="sub" id="sub"></p>
+      </article>
     </main>
 
     <footer class="dock">
@@ -72,32 +109,47 @@
         <span class="blob blob-c"></span>
       </div>
 
+      <form class="link" id="link-form">
+        <input
+          class="link-input"
+          id="link-input"
+          type="text"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="Paste a video or page link"
+          aria-label="Paste a video or page link"
+        />
+        <button class="link-go" id="link-go" type="submit" aria-label="Fetch this link">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" />
+          </svg>
+        </button>
+      </form>
+
       <label class="quality" id="quality-wrap" hidden>
         <span class="quality-label">Quality</span>
         <select id="quality"></select>
       </label>
+
       <div class="note" id="note" hidden></div>
+
       <button class="glass" id="download" disabled>
         <span class="glass-fill" id="fill"></span>
         <span class="glass-sheen" aria-hidden="true"></span>
-        <span class="glass-label" id="download-label">Select a file</span>
+        <span class="glass-label" id="download-label">Nothing to download</span>
       </button>
     </footer>
 
     <script src="popup.js"></script>
     <script>
-      // Land on a selected stream so the quality row and glass button show.
-      addEventListener('load', () =>
-        setTimeout(() => {
-          document.querySelectorAll('.item')[1]?.click();
-          if (new URLSearchParams(location.search).get('state') === 'busy') {
-            setTimeout(() => {
-              setButton('Downloading  62%', { busy: true, percent: 62 });
-              setNote('148 / 240 segments');
-            }, 60);
-          }
-        }, 120)
-      );
+      if (MODE === 'busy') {
+        addEventListener('load', () =>
+          setTimeout(() => {
+            setButton('Downloading  62%', { busy: true, percent: 62 });
+            setNote('148 / 240 segments');
+          }, 200)
+        );
+      }
     </script>
   </body>
 </html>

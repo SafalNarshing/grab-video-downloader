@@ -11,7 +11,6 @@
         <img class="mark mark-light" src="../../icons/mark-light.png" alt="" width="17" height="17" />
         <img class="mark mark-dark" src="../../icons/mark-dark.png" alt="" width="17" height="17" />
         <h1>Grab</h1>
-        <span class="count" id="count" hidden></span>
       </div>
       <div class="tools">
         <button class="icon" id="rescan" title="Scan the page again" aria-label="Scan again">
@@ -31,12 +30,23 @@
       </div>
     </header>
 
-    <main id="list" class="list" tabindex="-1">
+    <main class="stage" id="stage">
       <div class="empty" id="empty">
         <span class="pulse" aria-hidden="true"></span>
-        <p class="empty-title">Nothing detected yet</p>
-        <p class="empty-note">Start playing the video, then reopen this panel.</p>
+        <p class="empty-title">Nothing playing</p>
+        <p class="empty-note">Press play on the video, then reopen this panel — or paste a link below.</p>
       </div>
+
+      <article class="hero" id="hero" hidden>
+        <div class="thumb" id="thumb">
+          <img class="thumb-img" id="thumb-img" alt="" hidden />
+          <span class="thumb-blank" id="thumb-blank" aria-hidden="true"></span>
+          <span class="chip chip-time" id="chip-time" hidden></span>
+          <span class="chip chip-live" id="chip-live" hidden>LIVE</span>
+        </div>
+        <h2 class="title" id="title"></h2>
+        <p class="sub" id="sub"></p>
+      </article>
     </main>
 
     <footer class="dock">
@@ -45,6 +55,23 @@
         <span class="blob blob-b"></span>
         <span class="blob blob-c"></span>
       </div>
+
+      <form class="link" id="link-form">
+        <input
+          class="link-input"
+          id="link-input"
+          type="text"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="Paste a video or page link"
+          aria-label="Paste a video or page link"
+        />
+        <button class="link-go" id="link-go" type="submit" title="Fetch this link" aria-label="Fetch this link">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" />
+          </svg>
+        </button>
+      </form>
 
       <label class="quality" id="quality-wrap" hidden>
         <span class="quality-label">Quality</span>
@@ -56,7 +83,7 @@
       <button class="glass" id="download" disabled>
         <span class="glass-fill" id="fill"></span>
         <span class="glass-sheen" aria-hidden="true"></span>
-        <span class="glass-label" id="download-label">Select a file</span>
+        <span class="glass-label" id="download-label">Nothing to download</span>
       </button>
     </footer>
 

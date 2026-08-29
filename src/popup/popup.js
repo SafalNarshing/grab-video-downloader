@@ -1,27 +1,36 @@
 /* Grab — popup controller. */
 
 const $ = (id) => document.getElementById(id);
-const listEl = $('list');
+
 const emptyEl = $('empty');
-const countEl = $('count');
+const heroEl = $('hero');
+const thumbImg = $('thumb-img');
+const thumbBlank = $('thumb-blank');
+const chipTime = $('chip-time');
+const chipLive = $('chip-live');
+const titleEl = $('title');
+const subEl = $('sub');
 const noteEl = $('note');
 const qualityWrap = $('quality-wrap');
 const qualityEl = $('quality');
+const linkForm = $('link-form');
+const linkInput = $('link-input');
 const btn = $('download');
 const btnLabel = $('download-label');
 const fillEl = $('fill');
 
 let tabId = null;
-let items = [];
-let selected = null;
+let playing = null;
+let qualities = [];
 let job = null;
+let posterTried = false;
 
 /* ----------------------------------------------------------------- theme */
 
 async function initTheme() {
   const { theme } = await chrome.storage.local.get('theme');
-  const initial = theme || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
-  document.documentElement.dataset.theme = initial;
+  document.documentElement.dataset.theme =
+    theme || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
 }
 
 $('theme').addEventListener('click', () => {
@@ -32,84 +41,15 @@ $('theme').addEventListener('click', () => {
 
 /* ------------------------------------------------------------ formatting */
 
-function formatSize(bytes) {
-  if (!bytes) return '';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  let n = bytes;
-  let i = 0;
-  while (n >= 1024 && i < units.length - 1) {
-    n /= 1024;
-    i++;
-  }
-  return `${n >= 10 || i === 0 ? Math.round(n) : n.toFixed(1)} ${units[i]}`;
-}
-
 function formatDuration(seconds) {
-  if (!seconds) return '';
+  if (!seconds || !Number.isFinite(seconds)) return '';
   const s = Math.round(seconds);
   const mm = Math.floor(s / 60);
   const ss = String(s % 60).padStart(2, '0');
   return mm >= 60 ? `${Math.floor(mm / 60)}:${String(mm % 60).padStart(2, '0')}:${ss}` : `${mm}:${ss}`;
 }
 
-function badgeFor(item) {
-  if (item.kind === 'hls') return 'HLS';
-  if (item.kind === 'dash') return 'DASH';
-  if (item.kind === 'audio') return 'AUDIO';
-  const m = (item.url || '').split(/[?#]/)[0].match(/\.([a-z0-9]{2,5})$/i);
-  if (m) return m[1].toUpperCase();
-  return (item.mime || '').split('/')[1]?.toUpperCase() || 'VIDEO';
-}
-
-function metaFor(item) {
-  return [
-    item.height ? `${item.height}p` : '',
-    formatDuration(item.duration),
-    formatSize(item.size),
-    item.origin,
-  ]
-    .filter(Boolean)
-    .join('  ·  ');
-}
-
 /* ------------------------------------------------------------- rendering */
-
-function render() {
-  for (const el of listEl.querySelectorAll('.item')) el.remove();
-
-  countEl.hidden = items.length === 0;
-  countEl.textContent = String(items.length);
-  emptyEl.hidden = items.length > 0;
-
-  for (const item of items) {
-    const el = document.createElement('button');
-    el.className = 'item';
-    el.type = 'button';
-    el.dataset.id = item.id;
-    el.dataset.kind = item.kind;
-    el.setAttribute('aria-selected', String(item.id === selected?.id));
-
-    const badge = document.createElement('span');
-    badge.className = 'badge';
-    badge.textContent = badgeFor(item);
-
-    const body = document.createElement('span');
-    body.className = 'body';
-
-    const name = document.createElement('span');
-    name.className = 'name';
-    name.textContent = item.name;
-
-    const meta = document.createElement('span');
-    meta.className = 'meta';
-    meta.textContent = metaFor(item);
-
-    body.append(name, meta);
-    el.append(badge, body);
-    el.addEventListener('click', () => select(item));
-    listEl.append(el);
-  }
-}
 
 function setNote(text, tone) {
   noteEl.textContent = text || '';
@@ -126,70 +66,129 @@ function setButton(label, { disabled = false, percent = null, busy = false } = {
   if (percent != null) fillEl.style.width = `${percent}%`;
 }
 
-/* ------------------------------------------------------------- selection */
+function setPoster(url) {
+  if (!url) {
+    thumbImg.hidden = true;
+    thumbBlank.hidden = false;
+    return;
+  }
+  thumbImg.onload = () => {
+    thumbImg.hidden = false;
+    thumbBlank.hidden = true;
+  };
+  thumbImg.onerror = () => {
+    thumbImg.hidden = true;
+    thumbBlank.hidden = false;
+  };
+  thumbImg.src = url;
+}
 
-async function select(item) {
-  selected = item;
-  render();
+/**
+ * Cross-origin video taints the canvas, so this only works on a minority of
+ * sites. It runs once, and only when the page offered no poster of its own.
+ */
+async function tryFrameGrab() {
+  if (posterTried || !playing || playing.poster) return;
+  posterTried = true;
+  const res = await send({ type: 'grabFrame' });
+  if (res?.ok && res.dataUrl) setPoster(res.dataUrl);
+}
 
-  const streaming = item.kind === 'hls' || item.kind === 'dash';
-  qualityWrap.hidden = true;
-  qualityEl.replaceChildren();
+function render() {
+  const has = !!playing && (playing.hasVideo || qualities.length > 0);
+  emptyEl.hidden = has;
+  heroEl.hidden = !has;
 
-  setButton('Download', { disabled: false, percent: 0 });
-  setNote(
-    streaming ? 'Stream is rebuilt segment by segment. Separate audio saves as a second file.' : ''
-  );
-
-  if (!streaming) return;
-
-  setNote('Reading stream manifest…');
-  const res = await send({ type: 'variants', kind: item.kind, url: item.url });
-
-  if (selected !== item) return; // user moved on while we were fetching
-  if (res?.error) {
-    setNote(res.error, 'error');
+  if (!has) {
+    qualityWrap.hidden = true;
+    setButton('Nothing to download', { disabled: true, percent: 0 });
     return;
   }
 
-  const variants = res?.variants || [];
-  if (variants.length > 1) {
-    for (const v of variants) {
-      const opt = document.createElement('option');
-      opt.value = v.id;
-      opt.textContent = v.label;
-      qualityEl.append(opt);
-    }
-    qualityWrap.hidden = false;
+  titleEl.textContent = playing.title || 'Untitled video';
+  // Duration already sits on the thumbnail chip, so the subtitle carries the
+  // resolution the player is actually running at.
+  subEl.textContent = [playing.site, playing.height ? `${playing.height}p` : '', playing.live ? 'live' : '']
+    .filter(Boolean)
+    .join('  ·  ');
+
+  setPoster(playing.poster);
+  if (!playing.poster) tryFrameGrab();
+
+  chipLive.hidden = !playing.live;
+  chipTime.hidden = playing.live || !playing.duration;
+  chipTime.textContent = formatDuration(playing.duration);
+
+  qualityEl.replaceChildren();
+  for (const q of qualities) {
+    const opt = document.createElement('option');
+    opt.value = q.key;
+    opt.textContent = q.detail ? `${q.label} — ${q.detail}` : q.label;
+    qualityEl.append(opt);
   }
-  setNote('Stream is rebuilt segment by segment. Separate audio saves as a second file.');
+  qualityWrap.hidden = qualities.length === 0;
+
+  if (!qualities.length) {
+    setButton('No source yet', { disabled: true, percent: 0 });
+    setNote(
+      playing.live
+        ? 'Live streams expose no finished file. Let it play, then rescan.'
+        : 'Found the video but not its source yet. Let it play for a moment, then rescan.'
+    );
+    return;
+  }
+
+  setButton('Download', { disabled: false, percent: 0 });
+  noteForChoice();
 }
 
-/* -------------------------------------------------------------- messages */
+function currentChoice() {
+  return qualities.find((q) => q.key === qualityEl.value) || qualities[0];
+}
+
+function noteForChoice() {
+  const q = currentChoice();
+  if (!q) return setNote('');
+  if (q.stream) return setNote('Rebuilt segment by segment. Separate audio saves as a second file.');
+  if (/no audio/.test(q.detail || '')) return setNote('This resolution carries no audio — it saves as video only.');
+  setNote('');
+}
+
+qualityEl.addEventListener('change', noteForChoice);
+
+/* -------------------------------------------------------------- messaging */
 
 function send(msg) {
   return chrome.runtime.sendMessage({ tabId, ...msg }).catch((e) => ({ error: String(e?.message || e) }));
 }
 
-btn.addEventListener('click', async () => {
-  if (!selected) return;
+async function refresh() {
+  const res = await send({ type: 'state' });
+  if (res?.error) {
+    setNote(res.error, 'error');
+    return;
+  }
+  playing = res?.playing || null;
+  qualities = res?.qualities || [];
+  render();
+}
 
+/* --------------------------------------------------------------- actions */
+
+btn.addEventListener('click', async () => {
   if (job) {
     await send({ type: 'cancel', jobId: job });
     return;
   }
+  const q = currentChoice();
+  if (!q) return;
 
   setButton('Starting…', { disabled: true, percent: 0, busy: true });
-  const res = await send({
-    type: 'download',
-    item: selected,
-    variant: qualityWrap.hidden ? null : qualityEl.value,
-    tabId,
-  });
+  const res = await send({ type: 'download', itemId: q.itemId, variant: q.variant, name: playing?.title || '' });
 
   if (res?.error) {
     job = null;
-    setButton('Download', { disabled: false });
+    setButton('Download', { disabled: false, percent: 0 });
     setNote(res.error, 'error');
     return;
   }
@@ -197,6 +196,56 @@ btn.addEventListener('click', async () => {
   job = res.jobId;
   setButton(res.streaming ? 'Preparing…' : 'Downloading…', { busy: true, percent: 0 });
 });
+
+linkForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const url = linkInput.value.trim();
+  if (!url) return;
+
+  linkForm.classList.add('busy');
+  setNote('Checking that link…');
+  const res = await send({ type: 'link', url });
+  linkForm.classList.remove('busy');
+
+  if (res?.error) {
+    setNote(res.error, 'error');
+    return;
+  }
+
+  if (res.opened) {
+    // A watch page only gives up its video once a real tab loads and plays it,
+    // so the link is opened in the background and we read what that tab shows.
+    tabId = res.tabId;
+    await refresh();
+    setNote(
+      res.found
+        ? 'Opened that page in a new tab and picked up its video.'
+        : 'Opened it in a new tab, but nothing has played yet. Press play there, then rescan.',
+      res.found ? undefined : 'error'
+    );
+    return;
+  }
+
+  linkInput.value = '';
+  await refresh();
+  setNote('Added that link as a source.');
+});
+
+$('rescan').addEventListener('click', async (e) => {
+  const el = e.currentTarget;
+  el.classList.remove('spinning');
+  void el.offsetWidth; // restart the animation
+  el.classList.add('spinning');
+
+  posterTried = false;
+  // The content script is missing on tabs that were open before install.
+  await chrome.tabs.sendMessage(tabId, { type: 'rescan' }).catch(() =>
+    chrome.scripting.executeScript({ target: { tabId, allFrames: true }, files: ['src/content.js'] }).catch(() => {})
+  );
+  setTimeout(refresh, 500);
+});
+
+/* --------------------------------------------------------------- progress */
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg?.type !== 'progress' || msg.jobId !== job) return;
@@ -208,7 +257,7 @@ chrome.runtime.onMessage.addListener((msg) => {
     case 'downloading':
       setButton(msg.percent != null ? `Downloading  ${msg.percent}%` : 'Downloading…', {
         busy: true,
-        percent: msg.percent ?? 0,
+        percent: msg.percent ?? null,
       });
       if (msg.detail) setNote(msg.detail);
       break;
@@ -216,7 +265,7 @@ chrome.runtime.onMessage.addListener((msg) => {
       job = null;
       setButton('Saved', { percent: 100 });
       setNote(msg.split ? 'Saved as separate video and audio files.' : 'Saved to your downloads.');
-      setTimeout(() => selected && setButton('Download', { percent: 0 }), 2200);
+      setTimeout(() => setButton('Download', { percent: 0 }), 2200);
       break;
     case 'cancelled':
       job = null;
@@ -232,29 +281,6 @@ chrome.runtime.onMessage.addListener((msg) => {
 });
 
 /* ----------------------------------------------------------------- setup */
-
-async function refresh() {
-  const res = await send({ type: 'list' });
-  items = res?.items || [];
-  if (selected) selected = items.find((i) => i.id === selected.id) || null;
-  if (!selected) setButton('Select a file', { disabled: true, percent: 0 });
-  render();
-}
-
-$('rescan').addEventListener('click', async (e) => {
-  const el = e.currentTarget;
-  el.classList.remove('spinning');
-  void el.offsetWidth; // restart the animation
-  el.classList.add('spinning');
-
-  // The content script may not be injected on pages loaded before install.
-  await chrome.tabs.sendMessage(tabId, { type: 'rescan' }).catch(async () => {
-    await chrome.scripting
-      .executeScript({ target: { tabId, allFrames: true }, files: ['src/content.js'] })
-      .catch(() => {});
-  });
-  setTimeout(refresh, 400);
-});
 
 (async () => {
   await initTheme();

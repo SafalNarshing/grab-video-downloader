@@ -69,6 +69,12 @@
   border-radius: 0; /* the whole panel is deliberately square */
 }
 
+/* Components below set display: flex/grid, which outranks the UA rule for the
+   hidden attribute. Restate it so toggling `hidden` actually hides. */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
@@ -201,15 +207,6 @@ h1 {
   text-transform: uppercase;
 }
 
-.count {
-  padding: 1px 6px;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-dim);
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-}
-
 .tools {
   display: flex;
   gap: 4px;
@@ -263,98 +260,92 @@ h1 {
   }
 }
 
-/* ------------------------------------------------------------------ list */
+/* ----------------------------------------------------------------- stage */
 
-.list {
+.stage {
   position: relative;
   z-index: 1;
   flex: 1;
-  background: var(--bg);
   min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 8px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  outline: none;
+  padding: 12px;
+  background: var(--bg);
 }
 
-.list::-webkit-scrollbar {
-  width: 8px;
-}
-.list::-webkit-scrollbar-thumb {
-  background: var(--line);
-}
-.list::-webkit-scrollbar-track {
-  background: transparent;
+.hero {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
-.item {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 10px;
-  padding: 9px 10px;
-  text-align: left;
-  color: inherit;
-  font: inherit;
+.thumb {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
   background: var(--surface);
-  border: 1px solid var(--line-soft);
-  cursor: pointer;
-  transition: background 0.14s, border-color 0.14s, transform 0.14s;
-}
-
-.item:hover {
-  background: var(--surface-2);
-  border-color: var(--line);
-}
-
-.item[aria-selected='true'] {
-  background: var(--surface-2);
-  border-color: var(--accent);
-  box-shadow: inset 2px 0 0 var(--accent);
-}
-
-.badge {
-  align-self: center;
-  min-width: 42px;
-  padding: 4px 0;
-  text-align: center;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  color: var(--text-dim);
-  background: var(--bg-2);
   border: 1px solid var(--line);
 }
 
-.item[data-kind='hls'] .badge,
-.item[data-kind='dash'] .badge {
-  color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
-}
-
-.body {
-  min-width: 0;
-}
-
-.name {
+.thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
   display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 520;
 }
 
-.meta {
-  display: block;
-  margin-top: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* Stand-in when the page offers no poster and the frame grab was blocked. */
+.thumb-blank {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 120% at 30% 20%, color-mix(in srgb, var(--blob-a) 32%, transparent), transparent 60%),
+    radial-gradient(120% 120% at 80% 90%, color-mix(in srgb, var(--blob-b) 32%, transparent), transparent 60%),
+    var(--surface-2);
+}
+
+.chip {
+  position: absolute;
+  bottom: 8px;
+  padding: 2px 6px;
   font-size: 11px;
-  color: var(--text-faint);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.74);
+}
+
+.chip-time {
+  right: 8px;
+}
+
+.chip-live {
+  left: 8px;
+  letter-spacing: 0.11em;
+  background: #d21f1f;
+}
+
+.title {
+  margin: 12px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.sub {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ----------------------------------------------------------- empty state */
@@ -413,6 +404,66 @@ h1 {
 .dock > *:not(.ambient) {
   position: relative;
   z-index: 1;
+}
+
+.link {
+  display: flex;
+  gap: 0;
+}
+
+.link-input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 9px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-right: 0;
+}
+
+.link-input::placeholder {
+  color: var(--text-faint);
+}
+
+.link-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.link-go {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  color: var(--text-dim);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.link-go:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.link-go svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.link.busy .link-go svg {
+  animation: spin 0.7s linear infinite;
+}
+
+.link.busy .link-input {
+  opacity: 0.6;
 }
 
 .quality {
