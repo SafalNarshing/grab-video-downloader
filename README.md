@@ -35,12 +35,28 @@ Check it took: `ffmpeg -version` should print something.
 
 ## 2. Start the server
 
+Paths below are relative to the repo root. If you keep a virtualenv inside
+`server/` you will usually be one level down instead — drop the `server/`
+prefix and run `python server.py`.
+
 ```bash
-python server/server.py
+python server/server.py        # from the repo root
+cd server && python server.py  # from inside server/
 ```
 
 ```
 Grab server on http://127.0.0.1:8787  ->  C:\Users\you\Downloads\Grab
+```
+
+It stays in the foreground; leave that terminal open, and Ctrl+C to stop it.
+
+If it exits with `[Errno 10048] only one usage of each socket address`, the
+port is already taken — usually by a copy of this server you forgot was
+running. Either use that one, or free the port:
+
+```powershell
+Get-NetTCPConnection -LocalPort 8787 -State Listen |
+  ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
 ```
 
 Useful flags — each also readable from a `GRAB_*` environment variable:
