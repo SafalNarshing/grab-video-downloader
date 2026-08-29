@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import shutil
 import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -51,18 +52,27 @@ def main() -> None:
     version = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))["version"]
     DIST.mkdir(exist_ok=True)
     target = DIST / f"grab-{version}.zip"
+    unpacked = DIST / "unpacked"
 
     files = collect()
+
     # Deterministic order and no compression surprises, so rebuilds are stable.
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as z:
         for path in files:
             z.write(path, path.relative_to(ROOT).as_posix())
 
+    # The same tree unpacked: what `web-ext lint` and `web-ext sign` want, and
+    # what you point Chrome at for "Load unpacked" when testing the real build.
+    shutil.rmtree(unpacked, ignore_errors=True)
+    for path in files:
+        dest = unpacked / path.relative_to(ROOT)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, dest)
+
     total = sum(p.stat().st_size for p in files)
     print(f"{target.relative_to(ROOT).as_posix()}  —  {len(files)} files, "
           f"{total / 1024:.0f} KB in, {target.stat().st_size / 1024:.0f} KB zipped")
-    for path in files:
-        print("   ", path.relative_to(ROOT).as_posix())
+    print(f"{unpacked.relative_to(ROOT).as_posix()}/  —  same tree, for web-ext and Load unpacked")
 
 
 if __name__ == "__main__":

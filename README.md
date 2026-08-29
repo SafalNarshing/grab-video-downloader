@@ -145,16 +145,8 @@ That third step is not optional. Firefox treats MV3 host permissions as opt-in,
 so until you grant it, page detection finds nothing and the panel stays empty.
 Chrome grants them at install time, which is why it needs no equivalent step.
 
-A temporary add-on disappears when Firefox restarts. To keep it, build a package
-and sign it — unlisted signing is free and skips review:
-
-```bash
-python tools/package.py                    # -> dist/grab-<version>.zip
-npx web-ext sign --source-dir . --channel=unlisted   --api-key=<jwt issuer> --api-secret=<jwt secret>
-```
-
-Credentials come from [addons.mozilla.org](https://addons.mozilla.org/developers/addon/api/key/).
-Signing returns an `.xpi` you can install permanently.
+A temporary add-on disappears when Firefox restarts. To keep it, see
+[Signing for Firefox](#signing-for-firefox) below.
 
 ## 4. Point it at your server
 
@@ -168,6 +160,60 @@ Two places, same setting:
   whether ffmpeg was found, and where files are being written.
 
 Only change it if you moved the server's port or host.
+
+---
+
+## Signing for Firefox
+
+Firefox will not permanently install an unsigned add-on. Signing is free, and
+the **unlisted** channel skips the review queue.
+
+There is no key of your own to manage — Mozilla holds the signing key and signs
+on their servers. What comes back is an `.xpi`: the same zip with Mozilla's
+signature added under `META-INF/`. The AMO "API key" is just two strings that
+let a script do the upload for you.
+
+Build first:
+
+```bash
+python tools/package.py     # -> dist/grab-<version>.zip and dist/unpacked/
+```
+
+**Without credentials**
+
+1. [addons.mozilla.org/developers](https://addons.mozilla.org/developers/) → **Submit a New Add-on**
+2. Choose **On your own** (unlisted)
+3. Upload the zip, wait a minute, download the signed `.xpi`
+
+**With credentials**
+
+Take a JWT issuer and secret from [the API key page](https://addons.mozilla.org/developers/addon/api/key/)
+and put them in a `.env` — which `.gitignore` already covers:
+
+```bash
+WEB_EXT_API_KEY=user:00000000:00
+WEB_EXT_API_SECRET=<64 hex characters>
+```
+
+```bash
+set -a; . ./.env; set +a
+npx web-ext sign --source-dir dist/unpacked --channel=unlisted --artifacts-dir dist
+```
+
+Install the `.xpi` by dragging it onto Firefox, or `about:addons` → gear →
+**Install Add-on From File**.
+
+### Things that will bite
+
+- **Bump `version` in `manifest.json` before every run.** AMO refuses a version
+  it has already seen — and an interrupted run still consumes one.
+- **Let it finish.** Validation and approval take a few minutes; killing the
+  command does not cancel the upload already in flight.
+- **Never change `gecko.id`.** The signature is bound to it, so a new id is a
+  different add-on as far as Firefox is concerned.
+- The signed file is named after AMO's internal id, not the extension.
+- `dist/` is ignored by git. Attach the `.xpi` to a GitHub Release rather than
+  committing it.
 
 ---
 
@@ -242,3 +288,29 @@ table, so the extension never reasons about codecs — it just echoes one option
 back to `/download`.
 
 ---
+
+## Contributing
+
+It is a personal tool, but issues and pull requests are welcome.
+
+Most breakage is a stale yt-dlp rather than a bug here — sites change
+constantly. Try `pip install -U yt-dlp` before filing anything.
+
+Before opening a PR, check the package still builds and lints clean:
+
+```bash
+python tools/package.py
+npx web-ext lint --source-dir dist/unpacked --self-hosted
+```
+
+Three warnings are expected. They are the price of one package serving both
+Chrome and Firefox: the `offscreen` permission and API are unknown to Firefox
+but required by Chrome, and the ignored `service_worker` key is the coexistence
+working as intended. Anything beyond those three is worth looking at.
+
+One house rule: the panel stays square. No rounded corners anywhere.
+
+## Star it
+
+If this saved you some time, a star helps other people find it. That is the
+whole ask — no sponsor links, no newsletter.
