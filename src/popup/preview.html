@@ -114,6 +114,13 @@
             <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2v3h-3" />
           </svg>
         </button>
+        <button class="icon" id="popout" title="Open in a window that stays put" aria-label="Open in a window">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M9.5 2.5H13.5V6.5" />
+            <path d="M13.5 2.5 8 8" />
+            <path d="M12.5 9.8v3.7H2.5V3.5h3.7" />
+          </svg>
+        </button>
         <button class="icon" id="api-toggle" aria-label="Server address" aria-expanded="false">
           <svg viewBox="0 0 16 16" aria-hidden="true">
             <rect x="2" y="2.5" width="12" height="4.5" />
@@ -218,6 +225,29 @@
         }, 400);
       }
       if (MODE === 'apibar') setTimeout(() => (document.getElementById('apibar').hidden = false), 300);
+    </script>
+    <script type="module">
+      // Dev aid: ?measure=1 stamps layout widths onto <html> so a headless
+      // --dump-dom run can read them.
+      if (Q.get('measure')) {
+        setTimeout(() => {
+          const w = (el) => (el ? Math.round(el.getBoundingClientRect().width) : -1);
+          document.documentElement.setAttribute(
+            'data-measure',
+            JSON.stringify({
+              vw: innerWidth,
+              html: w(document.documentElement),
+              body: w(document.body),
+              surface: document.documentElement.dataset.surface || 'popup',
+              bar: w(document.querySelector('.bar')),
+              stage: w(document.querySelector('.stage')),
+              thumb: w(document.querySelector('.thumb')),
+              dock: w(document.querySelector('.dock')),
+              scrollW: document.documentElement.scrollWidth,
+            })
+          );
+        }, 900);
+      }
     </script>
   </body>
 </html>

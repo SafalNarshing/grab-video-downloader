@@ -116,8 +116,23 @@ Pick a quality and press **Download**.
 - **Paste a link** at the bottom for anything outside the current tab. With the
   server running this is the main path: paste a YouTube, Instagram, or LinkedIn
   URL and it resolves straight away.
-- **Right-click** any page, video, or link → **Download with Grab** → best MP4,
-  audio-only MP3, or choose a quality.
+- **Right-click** any page, video, or link → **Download with Grab…**. That fills
+  the link in and opens the panel as a **separate window**, which stays open
+  until you close it.
+
+### Why the right-click opens a window
+
+Chrome closes a toolbar popup the instant it loses focus, and no extension can
+stop it — there is no API for it. So the context menu opens a real window
+instead. It stays put, survives clicking elsewhere, and is resizable. The
+pop-out button in the toolbar popup (next to the theme toggle) detaches it the
+same way.
+
+Your download was never actually pausing when the popup vanished: the server
+keeps working regardless, and the file still lands. Only the progress display
+was disappearing. The panel now reads progress straight from the server rather
+than waiting to be told, so it reports the truth even if the extension's
+background worker has been suspended in the meantime.
 
 ### If the server is not running
 
@@ -208,7 +223,12 @@ to load from `file://`:
 python -m http.server 8899
 # http://127.0.0.1:8899/src/popup/preview.html?theme=dark&state=playing
 #   theme = dark | light
-#   state = playing | empty | busy | offline | apibar
+#   state   = playing | empty | busy | offline | apibar
+#   surface = window   (renders the detached-window layout)
+#   measure = 1        (stamps layout widths onto <html> for --dump-dom)
+#
+# Headless screenshots below ~500px wide get cropped rather than reflowed,
+# so check narrow layouts at 520px or wider.
 ```
 
 Icons are generated from `logo.jpg`, the single source of truth for artwork:

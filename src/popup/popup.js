@@ -1,4 +1,9 @@
-/* Grab — popup controller. */
+/* Grab — panel controller.
+ *
+ * Runs in two surfaces. As the toolbar popup it is at the browser's mercy and
+ * gets closed the moment it loses focus. As a detached window (surface=window)
+ * it stays open until the user closes it, which is what the context menu opens.
+ */
 
 import { api, getApiBase, setApiBase } from '../lib/api.js';
 
@@ -24,6 +29,9 @@ const btn = $('download');
 const btnLabel = $('download-label');
 const fillEl = $('fill');
 
+const params = new URLSearchParams(location.search);
+const STANDALONE = params.get('surface') === 'window';
+
 let tabId = null;
 let tabUrl = '';
 let targetUrl = ''; // what we are actually downloading — the tab, or a pasted link
@@ -32,6 +40,8 @@ let hero = null;
 let options = [];
 let source = 'local'; // 'server' when the options came from yt-dlp
 let job = null;
+let remote = null; // { remoteId, base } — lets us poll the server directly
+let pollTimer = null;
 let lastRemoteId = null;
 let posterTried = false;
 
@@ -86,9 +96,7 @@ function setButton(label, { disabled = false, percent = null, busy = false } = {
 
 function setServerDot() {
   serverDot.dataset.state = server.ok ? 'ok' : 'down';
-  $('api-toggle').title = server.ok
-    ? `Server: ${server.base}`
-    : `Server unreachable at ${server.base}`;
+  $('api-toggle').title = server.ok ? `Server: ${server.base}` : `Server unreachable at ${server.base}`;
 }
 
 function setPoster(url) {
@@ -113,7 +121,7 @@ function setPoster(url) {
  * sites. It runs once, and only when nothing else offered a poster.
  */
 async function tryFrameGrab() {
-  if (posterTried || hero?.poster) return;
+  if (posterTried || hero?.poster || tabId == null) return;
   posterTried = true;
   const res = await bg({ type: 'grabFrame' });
   if (res?.ok && res.dataUrl) setPoster(res.dataUrl);
@@ -157,7 +165,7 @@ function render() {
     return;
   }
 
-  setButton('Download', { disabled: false, percent: 0 });
+  if (!job) setButton('Download', { disabled: false, percent: 0 });
   noteForChoice();
 }
 
@@ -166,6 +174,7 @@ function currentChoice() {
 }
 
 function noteForChoice() {
+  if (job) return; // a running job owns the note
   const o = currentChoice();
   if (!o) return setNote('');
   if (source === 'server') {
@@ -184,6 +193,73 @@ qualityEl.addEventListener('change', noteForChoice);
 function bg(msg) {
   return chrome.runtime.sendMessage({ tabId, ...msg }).catch((e) => ({ error: String(e?.message || e) }));
 }
+
+/* --------------------------------------------------------- job monitoring */
+
+/**
+ * Progress is read straight from the server rather than waiting to be told.
+ * The service worker can be suspended between broadcasts; the server always
+ * knows, so the panel keeps reporting the truth either way.
+ */
+function watchRemote(rec) {
+  remote = rec;
+  clearInterval(pollTimer);
+
+  const tick = async () => {
+    let p;
+    try {
+      p = await api.progress(remote.remoteId, remote.base);
+    } catch {
+      return; // transient — keep showing the last known state
+    }
+
+    if (p.status === 'downloading') {
+      setButton(p.percent ? `Downloading  ${Math.round(p.percent)}%` : 'Downloading…', {
+        busy: true,
+        percent: p.percent || null,
+      });
+      setNote([p.speed, p.eta && p.eta !== '00:00' ? `ETA ${p.eta}` : ''].filter(Boolean).join(' · '));
+      return;
+    }
+    if (p.status === 'preparing' || p.status === 'queued') {
+      setButton('Preparing…', { busy: true, percent: 0 });
+      setNote('Reading the source…');
+      return;
+    }
+    if (p.status === 'processing') {
+      setButton('Merging…', { busy: true });
+      setNote('ffmpeg is joining video and audio.');
+      return;
+    }
+
+    stopWatching();
+    if (p.status === 'done') {
+      lastRemoteId = remote?.remoteId || null;
+      setButton('Saved', { percent: 100 });
+      setNote(`Saved${p.filename ? ` as ${p.filename}` : ''}. Click to open the folder.`);
+      noteEl.classList.add('clickable');
+      setTimeout(() => !job && setButton('Download', { disabled: options.length === 0, percent: 0 }), 2400);
+    } else if (p.status === 'cancelled') {
+      setButton('Download', { disabled: options.length === 0, percent: 0 });
+      setNote('Cancelled.');
+    } else if (p.status === 'error') {
+      setButton('Download', { disabled: options.length === 0, percent: 0 });
+      setNote(p.error || 'Download failed.', 'error');
+    }
+  };
+
+  pollTimer = setInterval(tick, 700);
+  tick();
+}
+
+function stopWatching() {
+  clearInterval(pollTimer);
+  pollTimer = null;
+  remote = null;
+  job = null;
+}
+
+/* --------------------------------------------------------------- loading */
 
 /** Server path: ask yt-dlp what the URL offers. */
 async function loadFromServer(url) {
@@ -209,16 +285,17 @@ async function loadFromServer(url) {
 function loadFromPage(state) {
   source = 'local';
   const playing = state.playing;
-  hero = playing?.hasVideo || state.qualities?.length
-    ? {
-        title: playing?.title || '',
-        poster: playing?.poster || '',
-        site: playing?.site || hostOf(tabUrl),
-        duration: playing?.duration || 0,
-        live: playing?.live || false,
-        height: playing?.height || 0,
-      }
-    : null;
+  hero =
+    playing?.hasVideo || state.qualities?.length
+      ? {
+          title: playing?.title || '',
+          poster: playing?.poster || '',
+          site: playing?.site || hostOf(tabUrl),
+          duration: playing?.duration || 0,
+          live: playing?.live || false,
+          height: playing?.height || 0,
+        }
+      : null;
   options = state.qualities || [];
 }
 
@@ -232,10 +309,10 @@ async function refresh() {
   server = state.server || { ok: false, base: '' };
   setServerDot();
 
-  if (state.job && !job) {
-    // A download started before this popup opened — re-attach to it.
+  // A download already running — re-attach rather than showing a fresh button.
+  if (state.job?.remoteId && !remote) {
     job = state.job.jobId;
-    setButton('Downloading…', { busy: true });
+    watchRemote({ remoteId: state.job.remoteId, base: state.job.base });
   }
 
   const url = state.pendingUrl || targetUrl || tabUrl;
@@ -268,12 +345,17 @@ async function refresh() {
 btn.addEventListener('click', async () => {
   if (job) {
     await bg({ type: 'cancel', jobId: job });
+    stopWatching();
+    setButton('Download', { disabled: options.length === 0, percent: 0 });
+    setNote('Cancelled.');
     return;
   }
   const o = currentChoice();
   if (!o) return;
 
   setButton('Starting…', { disabled: true, percent: 0, busy: true });
+  noteEl.classList.remove('clickable');
+
   const res =
     source === 'server'
       ? await bg({ type: 'serverDownload', url: targetUrl, option: o, title: hero?.title || '' })
@@ -287,25 +369,30 @@ btn.addEventListener('click', async () => {
   }
 
   job = res.jobId;
-  setButton('Preparing…', { busy: true, percent: 0 });
+  if (res.remoteId) watchRemote({ remoteId: res.remoteId, base: res.base });
+  else setButton('Preparing…', { busy: true, percent: 0 });
 });
 
 linkForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const url = linkInput.value.trim();
-  if (!url) return;
+  await useLink(linkInput.value.trim());
+});
 
+/** Shared by the paste field and the URL the context menu hands us. */
+async function useLink(url) {
+  if (!url) return;
+  linkInput.value = url;
   linkForm.classList.add('busy');
+
   try {
     if (server.ok) {
       // With the server up this is the whole feature: hand it the link.
+      targetUrl = url;
       await loadFromServer(url);
       render();
-      linkInput.value = '';
       return;
     }
 
-    // Without it, fall back to adopting a direct media link or opening the page.
     setNote('Checking that link…');
     const res = await bg({ type: 'link', url });
     if (res?.error) return setNote(res.error, 'error');
@@ -321,7 +408,6 @@ linkForm.addEventListener('submit', async (e) => {
       );
       return;
     }
-    linkInput.value = '';
     await refresh();
   } catch (err) {
     setNote(String(err?.message || err), 'error');
@@ -329,7 +415,7 @@ linkForm.addEventListener('submit', async (e) => {
   } finally {
     linkForm.classList.remove('busy');
   }
-});
+}
 
 $('rescan').addEventListener('click', async (e) => {
   const el = e.currentTarget;
@@ -338,10 +424,17 @@ $('rescan').addEventListener('click', async (e) => {
   el.classList.add('spinning');
 
   posterTried = false;
-  await chrome.tabs.sendMessage(tabId, { type: 'rescan' }).catch(() =>
-    chrome.scripting.executeScript({ target: { tabId, allFrames: true }, files: ['src/content.js'] }).catch(() => {})
-  );
+  if (tabId != null) {
+    await chrome.tabs.sendMessage(tabId, { type: 'rescan' }).catch(() =>
+      chrome.scripting.executeScript({ target: { tabId, allFrames: true }, files: ['src/content.js'] }).catch(() => {})
+    );
+  }
   setTimeout(refresh, 400);
+});
+
+$('popout').addEventListener('click', async () => {
+  await bg({ type: 'openWindow', url: targetUrl || tabUrl });
+  window.close();
 });
 
 /* ------------------------------------------------------------- server bar */
@@ -361,7 +454,6 @@ $('api-save').addEventListener('click', async () => {
   apiInput.value = base;
   apibar.hidden = true;
   $('api-toggle').setAttribute('aria-expanded', 'false');
-  targetUrl = '';
   await refresh();
 });
 
@@ -374,37 +466,25 @@ $('api-more').addEventListener('click', () => chrome.runtime.openOptionsPage());
 
 /* --------------------------------------------------------------- progress */
 
+// Only the in-browser fallback reports this way; server jobs are polled above.
 chrome.runtime.onMessage.addListener((msg) => {
-  if (msg?.type !== 'progress' || msg.jobId !== job) return;
+  if (msg?.type !== 'progress' || msg.jobId !== job || remote) return;
 
   switch (msg.phase) {
     case 'preparing':
       setButton('Preparing…', { busy: true, percent: 0 });
-      setNote('Reading the source…');
       break;
     case 'downloading':
       setButton(msg.percent ? `Downloading  ${Math.round(msg.percent)}%` : 'Downloading…', {
         busy: true,
         percent: msg.percent ?? null,
       });
-      setNote(msg.detail || '');
-      break;
-    case 'processing':
-      setButton('Merging…', { busy: true });
-      setNote('ffmpeg is joining video and audio.');
+      if (msg.detail) setNote(msg.detail);
       break;
     case 'done':
       job = null;
-      lastRemoteId = msg.remoteId || null;
       setButton('Saved', { percent: 100 });
-      setNote(
-        msg.split
-          ? 'Saved as separate video and audio files.'
-          : lastRemoteId
-            ? 'Saved. Click here to open the folder.'
-            : 'Saved to your downloads.'
-      );
-      noteEl.classList.toggle('clickable', !!lastRemoteId);
+      setNote(msg.split ? 'Saved as separate video and audio files.' : 'Saved to your downloads.');
       setTimeout(() => setButton('Download', { percent: 0 }), 2200);
       break;
     case 'cancelled':
@@ -430,12 +510,21 @@ noteEl.addEventListener('click', () => {
   await initTheme();
   apiInput.value = await getApiBase();
 
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  tabId = tab?.id ?? null;
-  tabUrl = tab?.url || '';
-  if (tabId == null) {
-    setNote('No active tab.', 'error');
-    return;
+  if (STANDALONE) {
+    document.documentElement.dataset.surface = 'window';
+    $('popout').hidden = true;
+    document.title = 'Grab — Download';
+  } else {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    tabId = tab?.id ?? null;
+    tabUrl = tab?.url || '';
   }
+
+  const handed = params.get('url');
+  if (handed) {
+    targetUrl = handed;
+    linkInput.value = handed;
+  }
+
   await refresh();
 })();

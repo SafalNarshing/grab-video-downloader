@@ -478,7 +478,9 @@ async function forgetJob(jobId) {
 
 async function activeJobFor(tabId) {
   const { serverJobs = {} } = await chrome.storage.session.get('serverJobs');
-  const hit = Object.entries(serverJobs).find(([, r]) => r.tabId === tabId);
+  const entries = Object.entries(serverJobs);
+  // The detached window has no tab of its own, so it adopts whatever is running.
+  const hit = tabId == null ? entries[0] : entries.find(([, r]) => r.tabId === tabId) || entries[0];
   return hit ? { jobId: hit[0], ...hit[1] } : null;
 }
 
@@ -573,7 +575,9 @@ async function startServerDownload({ tabId, url, option, title }) {
   await rememberJob(jobId, rec);
   setBusyBadge(tabId, true);
   watchJob(jobId, rec);
-  return { jobId, server: true };
+  // remoteId goes back so the UI can poll the server itself and stay accurate
+  // even when this worker is asleep.
+  return { jobId, server: true, remoteId: res.job_id, base };
 }
 
 /** Re-attach to anything still running after the worker was restarted. */
@@ -585,39 +589,58 @@ resumeJobs();
 
 /* ----------------------------------------------------------- context menu */
 
-const MENU_CONTEXTS = ['page', 'video', 'audio', 'link'];
+const MENU_CONTEXTS = ['page', 'video', 'audio', 'link', 'selection'];
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({ id: 'grab', title: 'Download with Grab', contexts: MENU_CONTEXTS });
-    chrome.contextMenus.create({ id: 'grab-best', parentId: 'grab', title: 'Best quality (MP4)', contexts: MENU_CONTEXTS });
-    chrome.contextMenus.create({ id: 'grab-mp3', parentId: 'grab', title: 'Audio only (MP3)', contexts: MENU_CONTEXTS });
-    chrome.contextMenus.create({ id: 'grab-pick', parentId: 'grab', title: 'Choose quality…', contexts: MENU_CONTEXTS });
+    chrome.contextMenus.create({ id: 'grab', title: 'Download with Grab…', contexts: MENU_CONTEXTS });
   });
 });
 
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+chrome.contextMenus.onClicked.addListener((info) => {
   // A right-click on a video or link targets that; anywhere else means the page.
-  const url = info.srcUrl || info.linkUrl || info.pageUrl;
-  if (!url) return;
+  const url = info.srcUrl || info.linkUrl || info.selectionText?.trim() || info.pageUrl;
+  if (url) openDownloader(url);
+});
 
-  if (info.menuItemId === 'grab-pick') {
-    // The popup cannot be opened reliably from here, so park the URL and let
-    // the badge invite a click.
-    await chrome.storage.session.set({ pendingUrl: url });
-    chrome.action.setBadgeText({ tabId: tab?.id, text: '?' }).catch(() => {});
-    chrome.action.openPopup?.().catch(() => {});
-    return;
+/* ------------------------------------------------------- downloader window */
+
+const WINDOW_SIZE = { width: 404, height: 660 };
+
+/**
+ * The toolbar popup is closed by the browser the moment it loses focus, which
+ * is no good for watching a download. This is a real window instead: it stays
+ * put until the user closes it.
+ */
+async function openDownloader(url) {
+  const target = chrome.runtime.getURL(
+    `src/popup/popup.html?surface=window${url ? `&url=${encodeURIComponent(url)}` : ''}`
+  );
+  const { downloaderWindowId } = await chrome.storage.session.get('downloaderWindowId');
+
+  if (downloaderWindowId != null) {
+    try {
+      // Reuse the window that is already open rather than stacking up more.
+      const win = await chrome.windows.get(downloaderWindowId, { populate: true });
+      const tab = win.tabs?.[0];
+      if (tab) {
+        await chrome.tabs.update(tab.id, { url: target });
+        await chrome.windows.update(downloaderWindowId, { focused: true, drawAttention: true });
+        return downloaderWindowId;
+      }
+    } catch {
+      /* it was closed since we last looked */
+    }
   }
 
-  const type = info.menuItemId === 'grab-mp3' ? 'mp3' : 'mp4';
-  try {
-    await startServerDownload({ tabId: tab?.id, url, option: { type, height: 0 }, title: tab?.title || '' });
-  } catch (e) {
-    setBusyBadge(tab?.id, false);
-    chrome.action.setBadgeText({ tabId: tab?.id, text: '!' }).catch(() => {});
-    emit({ type: 'progress', jobId: null, phase: 'error', error: String(e?.message || e) });
-  }
+  const win = await chrome.windows.create({ url: target, type: 'popup', focused: true, ...WINDOW_SIZE });
+  await chrome.storage.session.set({ downloaderWindowId: win.id });
+  return win.id;
+}
+
+chrome.windows.onRemoved.addListener(async (windowId) => {
+  const { downloaderWindowId } = await chrome.storage.session.get('downloaderWindowId');
+  if (downloaderWindowId === windowId) await chrome.storage.session.remove('downloaderWindowId');
 });
 
 /* --------------------------------------------------------------- messages */
@@ -698,6 +721,12 @@ const handlers = {
   /** Popup asked the server to fetch something; the job outlives the popup. */
   serverDownload: (msg) =>
     startServerDownload({ tabId: msg.tabId, url: msg.url, option: msg.option, title: msg.title }),
+
+  /** Detach into a window that the browser will not close behind you. */
+  async openWindow(msg) {
+    const id = await openDownloader(msg.url || '');
+    return { windowId: id };
+  },
 
   async reveal(msg) {
     const base = await getApiBase();
